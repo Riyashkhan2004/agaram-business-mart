@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: agaram
+      POSTGRES_PASSWORD: agaram_local_password
+      POSTGRES_DB: agaram_mart
+    ports:
+      - "5432:5432"
+    volumes:
+      - agaram_pgdata:/var/lib/postgresql
+
+volumes:
+  agaram_pgdata:

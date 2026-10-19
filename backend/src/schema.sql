@@ -1,0 +1,102 @@
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  phone VARCHAR(16) UNIQUE,
+  email VARCHAR(254),
+  password_hash TEXT,
+  email_verified_at TIMESTAMPTZ,
+  name VARCHAR(120) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE users ALTER COLUMN phone DROP NOT NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(254);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ;
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique_idx ON users(email) WHERE email IS NOT NULL;
+DROP TABLE IF EXISTS otp_challenges;
+
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  token_hash CHAR(64) NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  window_started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  requests_in_window SMALLINT NOT NULL DEFAULT 1 CHECK (requests_in_window >= 1 AND requests_in_window <= 5),
+  consumed_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS admins (
+  email VARCHAR(254) PRIMARY KEY,
+  password_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS user_sessions (
+  token_hash CHAR(64) PRIMARY KEY,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  admin_email VARCHAR(254) REFERENCES admins(email) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  revoked_at TIMESTAMPTZ,
+  CHECK ((user_id IS NOT NULL) <> (admin_email IS NOT NULL))
+);
+
+CREATE INDEX IF NOT EXISTS user_sessions_user_expiry_idx ON user_sessions (user_id, expires_at) WHERE user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS user_sessions_admin_expiry_idx ON user_sessions (admin_email, expires_at) WHERE admin_email IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS products (
+  id INTEGER PRIMARY KEY,
+  name VARCHAR(180) NOT NULL,
+  category VARCHAR(80) NOT NULL,
+  business VARCHAR(24) NOT NULL CHECK (business IN ('stationery', 'cctv', 'furniture')),
+  brand VARCHAR(100) NOT NULL DEFAULT '',
+  price NUMERIC(12,2) NOT NULL CHECK (price >= 0),
+  mrp NUMERIC(12,2) NOT NULL CHECK (mrp >= price),
+  unit VARCHAR(80) NOT NULL,
+  image TEXT NOT NULL,
+  badge VARCHAR(60),
+  description TEXT NOT NULL DEFAULT '',
+  stock INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0),
+  gst NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK (gst >= 0 AND gst <= 100),
+  sku VARCHAR(80) NOT NULL UNIQUE,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS products_category_active_idx ON products (category, active);
+CREATE INDEX IF NOT EXISTS products_business_active_idx ON products (business, active);
+
+CREATE TABLE IF NOT EXISTS orders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_no VARCHAR(32) NOT NULL UNIQUE,
+  user_id UUID NOT NULL REFERENCES users(id),
+  customer_name VARCHAR(120) NOT NULL,
+  phone VARCHAR(16) NOT NULL,
+  email VARCHAR(254),
+  address TEXT NOT NULL,
+  city VARCHAR(100) NOT NULL,
+  pincode VARCHAR(12) NOT NULL,
+  gstin VARCHAR(20),
+  subtotal NUMERIC(12,2) NOT NULL CHECK (subtotal >= 0),
+  tax NUMERIC(12,2) NOT NULL CHECK (tax >= 0),
+  total NUMERIC(12,2) NOT NULL CHECK (total >= 0),
+  status VARCHAR(24) NOT NULL DEFAULT 'received' CHECK (status IN ('received', 'confirmed', 'packed', 'shipped', 'delivered', 'cancelled')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS orders_user_created_idx ON orders (user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS order_items (
+  id BIGSERIAL PRIMARY KEY,
+  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+  product_name VARCHAR(180) NOT NULL,
+  sku VARCHAR(80) NOT NULL,
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
+  unit_price NUMERIC(12,2) NOT NULL CHECK (unit_price >= 0),
+  gst_rate NUMERIC(5,2) NOT NULL CHECK (gst_rate >= 0 AND gst_rate <= 100)
+);
+
+CREATE INDEX IF NOT EXISTS order_items_order_idx ON order_items (order_id);

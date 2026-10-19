@@ -1,0 +1,25 @@
+{
+  "name": "Agaram Business Mart | Stationery & School Supplies",
+  "short_name": "Agaram Mart",
+  "description": "Aesthetic Japanese stationery, Xerox supplies, School & Office combos with instant delivery",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#faf8f5",
+  "theme_color": "#e03a1f",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/abm-logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/abm-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["shopping", "productivity", "business"]
+}
