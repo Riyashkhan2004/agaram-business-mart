@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit'
 import bcrypt from 'bcryptjs'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { z } from 'zod'
+import nodemailer from 'nodemailer'
 import { camelOrder, camelProduct, pool } from './db.js'
 
 const production = process.env.NODE_ENV === 'production'
@@ -116,9 +117,31 @@ function authorize(role) {
 
 function escapeHtml(value) { return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]) }
 
+let smtpTransport = null
+function getSmtpTransport() {
+  if (smtpTransport) return smtpTransport
+  const host = process.env.SMTP_HOST || (process.env.GMAIL_USER ? 'smtp.gmail.com' : null)
+  const user = process.env.SMTP_USER || process.env.GMAIL_USER
+  const pass = process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || process.env.GMAIL_PASS
+  if (!host || !user || !pass) return null
+  const port = Number(process.env.SMTP_PORT || (host === 'smtp.gmail.com' ? 465 : 587))
+  const secure = process.env.SMTP_SECURE === 'true' || port === 465
+  try {
+    smtpTransport = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user, pass },
+      tls: { rejectUnauthorized: false }
+    })
+    return smtpTransport
+  } catch (err) {
+    console.warn('[EMAIL] Failed to initialize SMTP transport:', err.message)
+    return null
+  }
+}
+
 async function sendVerificationEmail(email, name, token) {
-  const apiKey = process.env.RESEND_API_KEY
-  const from = process.env.EMAIL_FROM || 'Agaram Business Mart <onboarding@resend.dev>'
   const verifyUrl = new URL('/verify-email', frontendUrl)
   verifyUrl.searchParams.set('token', token)
   const safeName = escapeHtml(name)
@@ -128,32 +151,64 @@ async function sendVerificationEmail(email, name, token) {
   console.log(`👉 ${verifyUrl.href}`)
   console.log('======================================================\n')
 
-  if (!apiKey) {
-    console.warn('[EMAIL] RESEND_API_KEY is not configured. Falling back to auto-verification.')
-    return { sent: false, reason: 'missing_api_key', verifyUrl: verifyUrl.href }
+  const html = `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#172b45;padding:24px;border:1px solid #e2e8f0;border-radius:14px;background:#ffffff">
+    <h1 style="color:#e03a1f;font-size:22px;margin-bottom:12px">Verify your Agaram account</h1>
+    <p>Hello ${safeName},</p>
+    <p>Confirm this email address to activate your Agaram Stationery Mart account and access your orders & invoices.</p>
+    <p style="margin:24px 0">
+      <a href="${verifyUrl.href}" style="display:inline-block;background:#e03a1f;color:#ffffff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px">
+        Verify Email Address
+      </a>
+    </p>
+    <p style="font-size:12px;color:#64748b">This link expires in 24 hours.</p>
+    <p style="font-size:11px;color:#94a3b8;word-break:break-all">Link: <a href="${verifyUrl.href}">${verifyUrl.href}</a></p>
+  </div>`
+  const text = `Hello ${name}, verify your Agaram account using this link: ${verifyUrl.href}`
+
+  // 1. Try Free SMTP (Gmail SMTP with App Password, Brevo, or custom SMTP)
+  const transport = getSmtpTransport()
+  if (transport) {
+    try {
+      const from = process.env.EMAIL_FROM || process.env.SMTP_USER || process.env.GMAIL_USER
+      await transport.sendMail({
+        from: from.includes('<') ? from : `Agaram Business Mart <${from}>`,
+        to: email,
+        subject: 'Verify your Agaram Stationery Mart account',
+        text,
+        html,
+      })
+      console.log(`[EMAIL] Verification email sent successfully via SMTP to ${email}`)
+      return { sent: true, provider: 'smtp', verifyUrl: verifyUrl.href }
+    } catch (smtpErr) {
+      console.warn(`[EMAIL] SMTP delivery failed to ${email}:`, smtpErr.message)
+    }
   }
 
-  try {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from, to: [email], subject: 'Verify your Agaram Stationery Mart account',
-        html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#172b45"><h1>Verify your email</h1><p>Hello ${safeName},</p><p>Confirm this email address to activate your Agaram account.</p><p><a href="${verifyUrl.href}" style="display:inline-block;background:#e03a1f;color:#fff;padding:13px 20px;border-radius:8px;text-decoration:none;font-weight:bold">Verify email</a></p><p>This link expires in 24 hours.</p></div>`,
-        text: `Hello ${name}, verify your Agaram account using this link: ${verifyUrl.href}`,
-      }),
-      signal: AbortSignal.timeout(10000),
-    })
-    if (!response.ok) {
+  // 2. Try Resend API
+  const apiKey = process.env.RESEND_API_KEY
+  if (apiKey) {
+    try {
+      const from = process.env.EMAIL_FROM || 'Agaram Business Mart <onboarding@resend.dev>'
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from, to: [email], subject: 'Verify your Agaram Stationery Mart account', html, text
+        }),
+        signal: AbortSignal.timeout(10000),
+      })
+      if (response.ok) {
+        console.log(`[EMAIL] Verification email sent successfully via Resend to ${email}`)
+        return { sent: true, provider: 'resend', verifyUrl: verifyUrl.href }
+      }
       const errBody = await response.text().catch(() => '')
       console.warn(`[EMAIL] Resend rejected dispatch (${response.status}):`, errBody)
-      return { sent: false, status: response.status, verifyUrl: verifyUrl.href }
+    } catch (err) {
+      console.warn('[EMAIL] Resend network error:', err.message)
     }
-    return { sent: true, verifyUrl: verifyUrl.href }
-  } catch (err) {
-    console.warn('[EMAIL] Verification dispatch error:', err.message)
-    return { sent: false, error: err.message, verifyUrl: verifyUrl.href }
   }
+
+  return { sent: false, verifyUrl: verifyUrl.href }
 }
 
 async function createAndSendVerification(user) {
