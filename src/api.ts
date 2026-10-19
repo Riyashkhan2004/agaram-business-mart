@@ -60,7 +60,7 @@ export const validateCoupon = async (code: string, total: number) => {
 }
 
 export const signUp = (name: string, email: string, password: string) =>
-  request<{ message: string }>('/api/auth/signup', { method: 'POST', body: JSON.stringify({ name, email, password }) })
+  request<{ message: string; user?: { id: string; name: string; email: string }; autoVerified?: boolean }>('/api/auth/signup', { method: 'POST', body: JSON.stringify({ name, email, password }) })
 
 export const verifyEmail = (token: string) =>
   request<{ user: { id: string; name: string; email: string } }>('/api/auth/email/verify', { method: 'POST', body: JSON.stringify({ token }) })

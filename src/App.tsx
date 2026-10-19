@@ -2294,7 +2294,7 @@ function CheckoutPage({
 
       <form onSubmit={handlePlaceOrder} className="checkout-grid">
         {/* Shipping details */}
-        <div style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px' }}>
+        <div className="checkout-card">
           <h2 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '18px' }}>1. Delivery Address</h2>
           <div className="checkout-fields-grid">
             <label style={{ display: 'grid', gap: '4px', fontSize: '12px', fontWeight: 700 }}>
@@ -2354,7 +2354,7 @@ function CheckoutPage({
         </div>
 
         {/* Order Summary & Coupon */}
-        <div style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: '16px', padding: '24px' }}>
+        <div className="checkout-card">
           <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '16px' }}>Order Total</h3>
 
           {/* Coupon Input */}
@@ -2704,6 +2704,9 @@ function AccountPage({
       if (isSignUp) {
         const res = await signUp(name, email, password)
         setMessage(res.message || 'Check your email for the verification link.')
+        if (res.user) {
+          setCurrentUser(res.user)
+        }
       } else {
         const res = await customerLogin(email, password)
         setCurrentUser(res.user)
