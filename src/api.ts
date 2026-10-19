@@ -1,6 +1,6 @@
 import { products as localProducts, activeCoupons, type Product } from './data/products'
 
-export const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+export const API_URL = (import.meta.env.VITE_API_URL || 'https://agaram-business-mart.onrender.com').replace(/\/$/, '')
 
 export type ApiOrder = {
   id: string

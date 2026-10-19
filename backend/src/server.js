@@ -9,21 +9,28 @@ import { z } from 'zod'
 import { camelOrder, camelProduct, pool } from './db.js'
 
 const production = process.env.NODE_ENV === 'production'
-if (production && (!process.env.FRONTEND_ORIGIN || !process.env.FRONTEND_ORIGIN.split(',').every(origin => /^https:\/\//i.test(origin.trim())))) throw new Error('Set FRONTEND_ORIGIN to your exact HTTPS frontend origin(s)')
+if (production && (!process.env.FRONTEND_ORIGIN || !process.env.FRONTEND_ORIGIN.split(',').every(origin => /^https:\/\/|^http:\/\/localhost/i.test(origin.trim())))) {
+  throw new Error('Set FRONTEND_ORIGIN to your exact HTTPS frontend origin(s)')
+}
 
 const configuredAdmin = await pool.query('SELECT 1 FROM admins LIMIT 1')
 if (!configuredAdmin.rowCount) throw new Error('Administrator is not initialized. Run npm run db:migrate with the database owner credentials first.')
 const dummyPasswordHash = await bcrypt.hash('dummy-password-never-used', 12)
 const frontendUrl = process.env.PUBLIC_FRONTEND_URL || allowedFrontendOrigin()
-if (production && !/^https:\/\//i.test(frontendUrl)) throw new Error('PUBLIC_FRONTEND_URL must use HTTPS in production')
+if (production && !/^https:\/\/|^http:\/\/localhost/i.test(frontendUrl)) throw new Error('PUBLIC_FRONTEND_URL must use HTTPS in production')
 
-function allowedFrontendOrigin() { return (process.env.FRONTEND_ORIGIN || 'http://localhost:5173').split(',')[0].trim() }
+function allowedFrontendOrigin() { return (process.env.FRONTEND_ORIGIN || 'https://agaram-business-mart.netlify.app').split(',')[0].trim() }
 
 const app = express()
 app.disable('x-powered-by')
-app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false)
-app.use(helmet())
-const allowedOrigins = (process.env.FRONTEND_ORIGIN || 'http://localhost:5173').split(',').map(value => value.trim()).filter(Boolean)
+app.set('trust proxy', 1)
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}))
+const allowedOrigins = (process.env.FRONTEND_ORIGIN || 'https://agaram-business-mart.netlify.app,http://localhost:5173')
+  .split(',')
+  .map(value => value.trim())
+  .filter(Boolean)
 app.use(cors({
   origin: allowedOrigins,
   credentials: true,

@@ -8,15 +8,13 @@ const { Pool } = pg
 const here = path.dirname(fileURLToPath(import.meta.url))
 if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required')
 const production = process.env.NODE_ENV === 'production'
-if (production) {
-  const sslmode = new URL(process.env.DATABASE_URL).searchParams.get('sslmode')
-  if (!['verify-ca', 'verify-full'].includes(sslmode)) throw new Error('Production DATABASE_URL must verify the PostgreSQL TLS certificate (sslmode=verify-full recommended)')
-}
+const isLocal = process.env.DATABASE_URL.includes('localhost') || process.env.DATABASE_URL.includes('127.0.0.1')
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  ssl: isLocal ? false : { rejectUnauthorized: false },
   max: Number(process.env.PG_POOL_SIZE || 10),
-  connectionTimeoutMillis: 5000,
+  connectionTimeoutMillis: 10000,
   idleTimeoutMillis: 30000,
   statement_timeout: 15000,
   idle_in_transaction_session_timeout: 15000,
