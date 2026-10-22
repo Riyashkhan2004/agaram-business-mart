@@ -16,6 +16,8 @@ import {
   fetchAdminOrders, adminLogin, customerLogin, signUp, verifyEmail, logout, getSession,
   saveProduct, deleteProduct, type ApiOrder
 } from './api'
+import { MapLocationPickerModal } from './components/MapLocationPickerModal'
+import { DeliveryPartnerLiveMapModal } from './components/DeliveryPartnerLiveMapModal'
 
 export type Language = 'en' | 'ta'
 export type CustomerType = 'retail' | 'wholesale'
@@ -253,6 +255,30 @@ export default function App() {
   const [userPincode, setUserPincode] = useState(() => readStorage('abm_pincode', '600001'))
   const [pincodeModalOpen, setPincodeModalOpen] = useState(false)
   const [currentUser, setCurrentUser] = useState<{ id?: string; name?: string; email?: string } | null>(null)
+  const [mapPickerOpen, setMapPickerOpen] = useState(false)
+  const [trackingModalOpen, setTrackingModalOpen] = useState(false)
+  const [activeTrackingOrder, setActiveTrackingOrder] = useState<{ id: string; address: string }>({
+    id: 'ABM-928174',
+    address: 'Main Road, Cuddalore - 607001'
+  })
+  const [selectedDeliveryLocation, setSelectedDeliveryLocation] = useState<{
+    address: string
+    city: string
+    pincode: string
+    label: string
+  }>(() => readStorage('abm_delivery_loc', {
+    address: 'Main Road, Cuddalore',
+    city: 'Cuddalore',
+    pincode: '607001',
+    label: 'Home'
+  }))
+
+  useEffect(() => {
+    localStorage.setItem('abm_delivery_loc', JSON.stringify(selectedDeliveryLocation))
+    if (selectedDeliveryLocation.pincode) {
+      setUserPincode(selectedDeliveryLocation.pincode)
+    }
+  }, [selectedDeliveryLocation])
 
   // Apply theme to document
   useEffect(() => {
@@ -343,9 +369,47 @@ export default function App() {
         </div>
       </div>
 
-      {/* 2. MAIN HEADER (Glassmorphic + Same Logo + Single Responsive Search Bar) */}
+      {/* 2. MAIN HEADER (Glassmorphic + Instamart Mobile Bar + Single Responsive Search Bar) */}
       <header className="main-header">
         <div className="container">
+          {/* Instamart Mobile Header Top Bar (as requested in user's hand-drawn sketch) */}
+          <div className="instamart-mobile-top">
+            <button
+              type="button"
+              className="instamart-loc-btn"
+              onClick={() => setMapPickerOpen(true)}
+              title="Change Delivery Location on Interactive Map"
+            >
+              <span className="instamart-loc-eta">
+                <Zap size={11} fill="#15803d" color="#15803d" />
+                {lang === 'ta' ? '10 நிமிடங்களில் விநியோகம்' : 'Delivery in 10 Mins'}
+              </span>
+              <span className="instamart-loc-text">
+                <span style={{ fontWeight: 800, color: 'var(--text-main)', maxWidth: '170px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {selectedDeliveryLocation.label} - {selectedDeliveryLocation.address}
+                </span>
+                <ChevronDown size={14} color="#15803d" />
+              </span>
+            </button>
+
+            <div className="instamart-top-right">
+              <div className="instamart-coins-pill" title="Agaram Reward Coins">
+                <span style={{ fontSize: '13px' }}>🪙</span>
+                <span>50</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLang(l => l === 'en' ? 'ta' : 'en')}
+                style={{ fontSize: '10px', padding: '4px 7px', borderRadius: '12px', background: 'rgba(0,0,0,0.06)', border: 'none', fontWeight: 800, cursor: 'pointer' }}
+              >
+                {lang === 'en' ? 'தமிழ்' : 'EN'}
+              </button>
+              <Link to="/account" className="instamart-profile-btn" title="My Profile / Account">
+                <UserRound size={17} color="var(--primary)" />
+              </Link>
+            </div>
+          </div>
+
           <div className="header-inner">
             {/* Same Original Logo */}
             <Link to="/" className="brand">
@@ -474,6 +538,15 @@ export default function App() {
               cart={cart}
               updateCartQty={updateCartQty}
               openCartDrawer={() => setCartDrawerOpen(true)}
+              onOpenTracking={() => {
+                setActiveTrackingOrder({
+                  id: 'ABM-928174',
+                  address: `${selectedDeliveryLocation.address}, ${selectedDeliveryLocation.city} - ${selectedDeliveryLocation.pincode}`
+                })
+                setTrackingModalOpen(true)
+              }}
+              onOpenMapPicker={() => setMapPickerOpen(true)}
+              selectedLocation={selectedDeliveryLocation}
             />
           } />
           <Route path="/category/:slug" element={
@@ -543,7 +616,18 @@ export default function App() {
             />
           } />
           <Route path="/account" element={
-            <AccountPage currentUser={currentUser} setCurrentUser={setCurrentUser} lang={lang} />
+            <AccountPage
+              currentUser={currentUser}
+              setCurrentUser={setCurrentUser}
+              lang={lang}
+              onOpenTracking={(id, addr) => {
+                setActiveTrackingOrder({
+                  id: id || 'ABM-928174',
+                  address: addr || `${selectedDeliveryLocation.address}, ${selectedDeliveryLocation.city} - ${selectedDeliveryLocation.pincode}`
+                })
+                setTrackingModalOpen(true)
+              }}
+            />
           } />
           <Route path="/admin" element={
             <AdminPage products={products} setProducts={setProducts} lang={lang} />
@@ -551,7 +635,19 @@ export default function App() {
           <Route path="/verify-email" element={<VerifyEmailPage setCurrentUser={setCurrentUser} />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/contact" element={<ContactPage />} />
-          <Route path="/invoice/:orderId" element={<InvoicePage products={products} lang={lang} />} />
+          <Route path="/invoice/:orderId" element={
+            <InvoicePage
+              products={products}
+              lang={lang}
+              onOpenTracking={(id, addr) => {
+                setActiveTrackingOrder({
+                  id: id || 'ABM-928174',
+                  address: addr || `${selectedDeliveryLocation.address}, ${selectedDeliveryLocation.city} - ${selectedDeliveryLocation.pincode}`
+                })
+                setTrackingModalOpen(true)
+              }}
+            />
+          } />
         </Routes>
       </main>
 
@@ -726,21 +822,46 @@ export default function App() {
         </div>
       )}
 
-      {/* 7. MOBILE FLOATING QUICK CART PILL (Instamart / Zepto Style) */}
+      {/* 7. INSTAMART STICKY FLOATING QUICK CART BAR (As in user's hand-drawn sketch) */}
       {totalCartCount > 0 && !['/cart', '/checkout'].includes(location.pathname) && !location.pathname.startsWith('/invoice') && (
-        <div className="floating-cart-pill" onClick={() => setCartDrawerOpen(true)}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '18px' }}>🛍️</span>
+        <div className="instamart-bottom-cart-bar" onClick={() => setCartDrawerOpen(true)}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ background: 'rgba(255,255,255,0.25)', borderRadius: '8px', padding: '4px 8px', fontSize: '13px', fontWeight: 900 }}>
+              {totalCartCount} {totalCartCount === 1 ? 'ITEM' : 'ITEMS'}
+            </div>
             <div>
-              <div style={{ fontSize: '13px', fontWeight: 800 }}>{totalCartCount} {totalCartCount === 1 ? 'item' : 'items'} · {money(cartSubtotal)}</div>
-              <div style={{ fontSize: '10px', opacity: 0.9 }}>{lang === 'ta' ? 'விரைவு உள்ளூர் விநியோகம் தயார்' : 'Express Local Dispatch Ready'}</div>
+              <div style={{ fontSize: '15px', fontWeight: 900, lineHeight: 1.1 }}>{money(cartSubtotal)}</div>
+              <div style={{ fontSize: '10px', opacity: 0.9 }}>
+                {lang === 'ta' ? '⚡ 10 நிமிட டெலிவரி' : '⚡ 10 Mins Delivery'}
+              </div>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 800, fontSize: '13px' }}>
-            {lang === 'ta' ? 'கூடை காண்க' : 'View Cart'} <ArrowRight size={15} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13.5px', fontWeight: 900 }}>
+            {lang === 'ta' ? 'கூடை காண்க' : 'View Cart'} <ArrowRight size={16} />
           </div>
         </div>
       )}
+
+      {/* 8. INTERACTIVE MAP LOCATION PICKER MODAL (Leaflet / OpenStreetMap) */}
+      <MapLocationPickerModal
+        isOpen={mapPickerOpen}
+        onClose={() => setMapPickerOpen(false)}
+        currentPincode={userPincode}
+        onSelectAddress={(addr) => {
+          setSelectedDeliveryLocation(addr)
+          setUserPincode(addr.pincode)
+        }}
+        lang={lang}
+      />
+
+      {/* 9. DELIVERY PARTNER LIVE GPS TRACKING MAP MODAL (Animated Scooter 🛵) */}
+      <DeliveryPartnerLiveMapModal
+        isOpen={trackingModalOpen}
+        onClose={() => setTrackingModalOpen(false)}
+        orderId={activeTrackingOrder.id}
+        customerAddress={activeTrackingOrder.address}
+        lang={lang}
+      />
 
       {/* 8. NATIVE ANDROID MOBILE BOTTOM NAVIGATION BAR (Flipkart / Shopsy Style) */}
       <nav className="mobile-bottom-bar">
@@ -857,6 +978,30 @@ export default function App() {
 function HeaderSearch({ products, onSelect, lang = 'en' }: { products: Product[]; onSelect: (id: number) => void; lang?: Language }) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
+  const [placeholderIdx, setPlaceholderIdx] = useState(0)
+
+  const rotatingPlaceholders = useMemo(() => lang === 'ta' ? [
+    "தேடுக 'JK Copier A4 பேப்பர்'...",
+    "தேடுக 'பாஸ்டல் ஹைலைட்டர்கள்'...",
+    "தேடுக 'எப்சன் 003 ரீஃபில் இங்க்'...",
+    "தேடுக 'ஹௌசர் XO ஜெல் பேனா'...",
+    "தேடுக 'பள்ளி நோட்டுகள் & காம்போ'...",
+    "தேடுக 'பிறந்தநாள் பலூன்கள் & அலங்காரங்கள்'..."
+  ] : [
+    "Search 'JK Copier A4 Paper'...",
+    "Search 'Pastel Highlighters'...",
+    "Search 'Epson 003 Refill Inks'...",
+    "Search 'Hauser XO Gel Pens'...",
+    "Search 'School Combos & Notebooks'...",
+    "Search 'Birthday Balloons & Decor'..."
+  ], [lang])
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setPlaceholderIdx(prev => (prev + 1) % rotatingPlaceholders.length)
+    }, 2800)
+    return () => clearInterval(t)
+  }, [rotatingPlaceholders.length])
 
   const matches = useMemo(() => {
     if (!query.trim() || query.length < 2) return []
@@ -878,7 +1023,7 @@ function HeaderSearch({ products, onSelect, lang = 'en' }: { products: Product[]
           value={query}
           onChange={e => { setQuery(e.target.value); setOpen(true) }}
           onFocus={() => setOpen(true)}
-          placeholder={t[lang]?.searchPlaceholder || 'Search aesthetic pens, mildliners, xerox papers, school combos...'}
+          placeholder={rotatingPlaceholders[placeholderIdx]}
           className="search-input"
         />
         {query && (
@@ -947,7 +1092,8 @@ const FlashDealsTicker = memo(function FlashDealsTicker() {
    HOMEPAGE VIEW (Categorized Product Sections & Business Sectors)
    ========================================================================== */
 function HomePage({
-  products, lang, customerType, setCustomerType, wishlist, toggleWishlist, addToCart, cart, updateCartQty, openCartDrawer
+  products, lang, customerType, setCustomerType, wishlist, toggleWishlist, addToCart, cart, updateCartQty, openCartDrawer,
+  onOpenTracking, onOpenMapPicker, selectedLocation
 }: {
   products: Product[]
   lang: Language
@@ -959,6 +1105,9 @@ function HomePage({
   cart: CartItem[]
   updateCartQty: (id: number, delta: number) => void
   openCartDrawer: () => void
+  onOpenTracking?: () => void
+  onOpenMapPicker?: () => void
+  selectedLocation?: { address: string; city: string; pincode: string; label: string }
 }) {
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [selectedBrand, setSelectedBrand] = useState<string>('all')
@@ -1007,6 +1156,150 @@ function HomePage({
 
   return (
     <div className="container" style={{ paddingBottom: '40px' }}>
+      {/* 1. INSTAMART LIVE DELIVERY TRACKING BANNER (Interactive Live Map trigger) */}
+      <div
+        className="instamart-live-tracking-pill"
+        onClick={onOpenTracking}
+        role="button"
+        tabIndex={0}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontSize: '24px' }}>🛵</span>
+          <div>
+            <div style={{ fontSize: '13px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>{lang === 'ta' ? 'டெலிவரி பார்ட்னர் கார்த்திக் ராஜா வழியில் உள்ளார்' : 'Delivery Partner Karthik Raja is on the way'}</span>
+              <span className="instamart-pulse-dot" />
+            </div>
+            <div style={{ fontSize: '11px', opacity: 0.9 }}>
+              {lang === 'ta' ? 'வருகை நேரம்: 8 நிமிடம் · நேரலை வரைபடத்தில் கண்காணிக்கவும்' : 'Arriving in 8 mins to your location · Tap to track on Live Map'}
+            </div>
+          </div>
+        </div>
+        <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#15803d', background: '#fff', padding: '6px 12px', borderRadius: '20px', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+          {lang === 'ta' ? 'வரைபடம்' : 'Track Map'} ➔
+        </span>
+      </div>
+
+      {/* 2. INSTAMART OFFERS HORIZONTAL SNAP CAROUSEL */}
+      <div className="instamart-offers-carousel">
+        <div className="instamart-offer-banner" style={{ background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)' }}>
+          <div>
+            <span style={{ background: 'rgba(255,255,255,0.25)', color: '#fff', fontSize: '10px', fontWeight: 900, padding: '2px 7px', borderRadius: '6px' }}>
+              ⚡ 10 MINS DELIVERY
+            </span>
+            <h4 style={{ fontSize: '16px', fontWeight: 900, color: '#fff', margin: '6px 0 2px' }}>
+              {lang === 'ta' ? 'ஜெராக்ஸ் தாள்கள் & இங்க்' : 'Xerox Paper & Refill Inks'}
+            </h4>
+            <p style={{ fontSize: '11.5px', color: 'rgba(255,255,255,0.92)', margin: 0, fontWeight: 600 }}>
+              {lang === 'ta' ? 'கார்ட்டன் கட்டுகளுக்கு 25% தள்ளுபடி' : 'Flat 25% OFF on Bulk Cartons & OEM Inks'}
+            </p>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+            <span style={{ fontSize: '10.5px', fontWeight: 800, background: '#fff', color: '#c2410c', padding: '3px 9px', borderRadius: '12px' }}>
+              {lang === 'ta' ? 'வாங்க' : 'Order Now'} ➔
+            </span>
+            <span style={{ fontSize: '26px' }}>🖨️</span>
+          </div>
+        </div>
+
+        <div className="instamart-offer-banner" style={{ background: 'linear-gradient(135deg, #db2777 0%, #be185d 100%)' }}>
+          <div>
+            <span style={{ background: 'rgba(255,255,255,0.25)', color: '#fff', fontSize: '10px', fontWeight: 900, padding: '2px 7px', borderRadius: '6px' }}>
+              🌸 KAWAII STATIONERY
+            </span>
+            <h4 style={{ fontSize: '16px', fontWeight: 900, color: '#fff', margin: '6px 0 2px' }}>
+              {lang === 'ta' ? 'ஜப்பானிய ஜெல் பேனாக்கள்' : 'Pastel Aesthetic Gel Pens'}
+            </h4>
+            <p style={{ fontSize: '11.5px', color: 'rgba(255,255,255,0.92)', margin: 0, fontWeight: 600 }}>
+              {lang === 'ta' ? '₹199 முதல் தொடங்குகிறது' : 'Starting ₹199 | Buy 2 Get 1 Free'}
+            </p>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+            <span style={{ fontSize: '10.5px', fontWeight: 800, background: '#fff', color: '#be185d', padding: '3px 9px', borderRadius: '12px' }}>
+              {lang === 'ta' ? 'ஆராய்' : 'Explore'} ➔
+            </span>
+            <span style={{ fontSize: '26px' }}>✨</span>
+          </div>
+        </div>
+
+        <div className="instamart-offer-banner" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' }}>
+          <div>
+            <span style={{ background: 'rgba(255,255,255,0.25)', color: '#fff', fontSize: '10px', fontWeight: 900, padding: '2px 7px', borderRadius: '6px' }}>
+              🎒 SCHOOL COMBO
+            </span>
+            <h4 style={{ fontSize: '16px', fontWeight: 900, color: '#fff', margin: '6px 0 2px' }}>
+              {lang === 'ta' ? 'பள்ளி அத்தியாவசிய தொகுப்பு' : 'School Notebooks & Kits'}
+            </h4>
+            <p style={{ fontSize: '11.5px', color: 'rgba(255,255,255,0.92)', margin: 0, fontWeight: 600 }}>
+              {lang === 'ta' ? 'கூடுதல் 15% சேமிப்பு' : 'Save Up to 35% on Classroom Packs'}
+            </p>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+            <span style={{ fontSize: '10.5px', fontWeight: 800, background: '#fff', color: '#0369a1', padding: '3px 9px', borderRadius: '12px' }}>
+              {lang === 'ta' ? 'வாங்க' : 'Order Now'} ➔
+            </span>
+            <span style={{ fontSize: '26px' }}>📓</span>
+          </div>
+        </div>
+
+        <div className="instamart-offer-banner" style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)' }}>
+          <div>
+            <span style={{ background: 'rgba(255,255,255,0.25)', color: '#fff', fontSize: '10px', fontWeight: 900, padding: '2px 7px', borderRadius: '6px' }}>
+              🎉 PARTY & CELEBRATION
+            </span>
+            <h4 style={{ fontSize: '16px', fontWeight: 900, color: '#fff', margin: '6px 0 2px' }}>
+              {lang === 'ta' ? 'கொண்டாட்ட அலங்காரங்கள்' : 'Party Decor & Balloons'}
+            </h4>
+            <p style={{ fontSize: '11.5px', color: 'rgba(255,255,255,0.92)', margin: 0, fontWeight: 600 }}>
+              {lang === 'ta' ? 'பலூன்கள், ரிப்பன்கள் & விளக்குகள்' : 'Balloons, Ribbons, Candles & Props'}
+            </p>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+            <span style={{ fontSize: '10.5px', fontWeight: 800, background: '#fff', color: '#6d28d9', padding: '3px 9px', borderRadius: '12px' }}>
+              {lang === 'ta' ? 'பார்க்க' : 'Shop Party'} ➔
+            </span>
+            <span style={{ fontSize: '26px' }}>🎈</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. INSTAMART 2-ROW CATEGORY TILES GRID (Matching User Hand-Drawn Sketch "categories") */}
+      <div className="instamart-categories-section">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+          <h3 style={{ fontSize: '15px', fontWeight: 900, margin: 0, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span>🗂️</span> {lang === 'ta' ? 'அனைத்து பிரிவுகள்' : 'Shop by Category'}
+          </h3>
+          <Link to="/category/xerox-printing" style={{ fontSize: '12px', fontWeight: 800, color: 'var(--primary)' }}>
+            {lang === 'ta' ? 'அனைத்தும் ➔' : 'See All ➔'}
+          </Link>
+        </div>
+        <div className="instamart-categories-grid">
+          {[
+            { name: 'Xerox & Print', nameTa: 'ஜெராக்ஸ்', icon: '🖨️', slug: 'xerox-printing', bg: '#fef3c7' },
+            { name: 'School Needs', nameTa: 'பள்ளி தேவைகள்', icon: '🎒', slug: 'school-essentials', bg: '#e0f2fe' },
+            { name: 'Retail Bulk', nameTa: 'மொத்த விற்பனை', icon: '🏪', slug: 'retailer-bulk', bg: '#fce7f3' },
+            { name: 'Office Desk', nameTa: 'அலுவலகம்', icon: '🏢', slug: 'office-products', bg: '#dcfce7' },
+            { name: 'Aesthetic Pens', nameTa: 'ஜெல் பேனாக்கள்', icon: '🖊️', slug: 'aesthetic-pens', bg: '#ede9fe' },
+            { name: 'Highlighters', nameTa: 'ஹைலைட்டர்', icon: '🖍️', slug: 'highlighters-markers', bg: '#fef9c3' },
+            { name: 'Notebooks', nameTa: 'நோட்டுகள்', icon: '📓', slug: 'notebooks-journals', bg: '#ffedd5' },
+            { name: 'Celebration', nameTa: 'கொண்டாட்டம்', icon: '🎉', slug: 'celebration-decor', bg: '#fee2e2' },
+          ].map(c => (
+            <Link
+              key={c.slug}
+              to={`/category/${c.slug}`}
+              className="instamart-category-card"
+            >
+              <div className="instamart-cat-icon-wrap" style={{ background: c.bg }}>
+                <span style={{ fontSize: '22px' }}>{c.icon}</span>
+              </div>
+              <span className="instamart-cat-title">
+                {lang === 'ta' ? c.nameTa : c.name}
+              </span>
+            </Link>
+          ))}
+        </div>
+      </div>
+
       {/* BUSINESS SECTORS QUICK SELECTOR TABS */}
       <div className="sectors-nav-bar" style={{ marginTop: '16px' }}>
         <button
@@ -2652,7 +2945,7 @@ function CheckoutPage({
 /* ==========================================================================
    TAX INVOICE PAGE (Printable & Downloadable GST Invoice)
    ========================================================================== */
-function InvoicePage({ products, lang = 'en' }: { products: Product[]; lang?: Language }) {
+function InvoicePage({ products, lang = 'en', onOpenTracking }: { products: Product[]; lang?: Language; onOpenTracking?: (orderId: string, address: string) => void }) {
   const { orderId } = useParams<{ orderId: string }>()
   const orders = readStorage<ApiOrder[]>('abm_orders', [])
   const order = orders.find(o => o.id === orderId) || {
@@ -2710,11 +3003,22 @@ function InvoicePage({ products, lang = 'en' }: { products: Product[]; lang?: La
 
   return (
     <div className="container" style={{ padding: '36px 0 60px' }}>
-      <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+      <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '20px' }}>
         <Link to="/" className="btn btn-secondary"><ArrowLeft size={16} /> {lang === 'ta' ? 'கடைக்குத் திரும்பு' : 'Back to Store'}</Link>
-        <button onClick={() => window.print()} className="btn btn-primary">
-          <Printer size={16} /> {lang === 'ta' ? 'விலைப்பட்டியலை அச்சிடுக' : 'Print Tax Invoice'}
-        </button>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          {onOpenTracking && (
+            <button
+              onClick={() => onOpenTracking(order.id, `${order.address || 'Cuddalore'} - ${order.pincode || '607001'}`)}
+              className="btn btn-secondary"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: 800 }}
+            >
+              <span>🛵</span> {lang === 'ta' ? 'நேரலை வரைபடம்' : 'Track Partner on Map'}
+            </button>
+          )}
+          <button onClick={() => window.print()} className="btn btn-primary">
+            <Printer size={16} /> {lang === 'ta' ? 'விலைப்பட்டியலை அச்சிடுக' : 'Print Tax Invoice'}
+          </button>
+        </div>
       </div>
 
       {/* ORIGINAL INVOICE CARD (Image 2) */}
@@ -2917,11 +3221,12 @@ function WishlistPage({
    ACCOUNT & SIGN-IN PAGE
    ========================================================================== */
 function AccountPage({
-  currentUser, setCurrentUser, lang = 'en'
+  currentUser, setCurrentUser, lang = 'en', onOpenTracking
 }: {
   currentUser: { id?: string; name?: string; email?: string } | null
   setCurrentUser: (u: { id?: string; name?: string; email?: string } | null) => void
   lang?: Language
+  onOpenTracking?: (orderId: string, address: string) => void
 }) {
   const [isSignUp, setIsSignUp] = useState(false)
   const [name, setName] = useState('')
@@ -3071,7 +3376,16 @@ function AccountPage({
                     <b>{order.items.length}</b> {order.items.length === 1 ? 'item' : 'items'} ({order.items.reduce((s, i) => s + i.quantity, 0)} units)
                     {order.customerName && <div style={{ fontSize: '11px', color: 'var(--text-soft)' }}>Deliver to: {order.customerName}, {order.city}</div>}
                   </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {onOpenTracking && (
+                      <button
+                        onClick={() => onOpenTracking(order.id, `${order.address || 'Cuddalore'} - ${order.pincode || '607001'}`)}
+                        className="btn btn-secondary"
+                        style={{ fontSize: '11px', padding: '5px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: 800 }}
+                      >
+                        <span>🛵</span> {lang === 'ta' ? 'வரைபடம்' : 'Track Map'}
+                      </button>
+                    )}
                     <Link
                       to={`/invoice/${order.id}`}
                       className="btn btn-secondary"

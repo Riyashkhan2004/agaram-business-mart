@@ -3368,6 +3368,353 @@ html, body {
   transition: width 0.4s ease;
 }
 
+/* ==========================================================================
+   INSTAMART MOBILE APP DESIGN SYSTEM & INTERACTIVE MAP LOCATION FINDER
+   ========================================================================== */
+
+/* 1. Instamart Mobile Header Top Bar */
+.instamart-mobile-top {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .top-bar {
+    display: none !important;
+  }
+
+  .header-inner .brand {
+    display: none !important;
+  }
+
+  .header-inner .header-actions {
+    display: none !important;
+  }
+
+  .instamart-mobile-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 2px 0 6px;
+    gap: 8px;
+    box-sizing: border-box;
+  }
+
+  .instamart-loc-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    text-align: left;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .instamart-loc-eta {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 900;
+    color: #15803d;
+    letter-spacing: -0.01em;
+  }
+
+  .instamart-loc-text {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 13.5px;
+    font-weight: 800;
+    color: var(--text-main);
+    max-width: 200px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .instamart-top-right {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-shrink: 0;
+  }
+
+  .instamart-coins-pill {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 9px;
+    border-radius: 20px;
+    background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+    border: 1px solid #fde68a;
+    font-size: 11px;
+    font-weight: 800;
+    color: #b45309;
+    box-shadow: 0 1px 4px rgba(245, 158, 11, 0.15);
+    text-decoration: none;
+  }
+
+  .instamart-profile-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: var(--primary-light);
+    color: var(--primary);
+    display: grid;
+    place-items: center;
+    font-size: 14px;
+    font-weight: 800;
+    border: 1.5px solid var(--primary-border);
+    cursor: pointer;
+    text-decoration: none;
+  }
+}
+
+/* 2. Offers Banner Carousel ("offers" in sketch) */
+.instamart-offers-carousel {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding: 12px 0 6px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.instamart-offers-carousel::-webkit-scrollbar {
+  display: none;
+}
+
+.instamart-offer-banner {
+  flex: 0 0 calc(85% - 6px);
+  scroll-snap-align: start;
+  border-radius: 16px;
+  padding: 16px 18px;
+  color: #ffffff;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 105px;
+  text-decoration: none;
+}
+
+.instamart-offer-banner:active {
+  transform: scale(0.98);
+}
+
+@media (min-width: 768px) {
+  .instamart-offer-banner {
+    flex: 0 0 calc(25% - 9px);
+  }
+}
+
+/* 3. Instamart 2-Row Category Tiles Grid ("categories" in sketch) */
+.instamart-categories-section {
+  margin: 18px 0 14px;
+}
+
+.instamart-categories-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+@media (min-width: 768px) {
+  .instamart-categories-grid {
+    grid-template-columns: repeat(8, 1fr);
+    gap: 12px;
+  }
+}
+
+.instamart-category-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 10px 4px 8px;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  text-decoration: none;
+}
+
+.instamart-category-card:hover,
+.instamart-category-card:active {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+  border-color: var(--primary-border);
+}
+
+.instamart-cat-icon-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  margin-bottom: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.instamart-cat-title {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-main);
+  line-height: 1.2;
+}
+
+/* 4. Live Order Tracking Banner */
+.instamart-live-tracking-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(90deg, #15803d 0%, #16a34a 100%);
+  color: #ffffff;
+  padding: 10px 14px;
+  border-radius: 14px;
+  box-shadow: 0 4px 16px rgba(22, 163, 74, 0.28);
+  margin: 12px 0;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+  gap: 10px;
+}
+
+.instamart-live-tracking-pill:active {
+  transform: scale(0.98);
+}
+
+/* 5. Leaflet Map Modals */
+.instamart-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+}
+
+.instamart-map-modal,
+.instamart-tracking-modal {
+  width: 100%;
+  max-width: 520px;
+  background: #ffffff;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: modalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalSlideUp {
+  from { opacity: 0; transform: translateY(20px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.instamart-map-header,
+.instamart-tracking-header {
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  background: #ffffff;
+}
+
+.instamart-lightning-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: #dcfce7;
+  color: #15803d;
+  font-size: 10.5px;
+  font-weight: 900;
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+.instamart-close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.05);
+  border: none;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  color: var(--text-main);
+  transition: all 0.15s;
+}
+
+.instamart-close-btn:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.instamart-pulse-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  animation: partnerPulse 1.6s infinite;
+}
+
+@keyframes partnerPulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+
+/* 6. Instamart Sticky Floating Bottom Cart Bar ("cart button" in sketch) */
+.instamart-bottom-cart-bar {
+  position: fixed;
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 8px);
+  left: 12px;
+  right: 12px;
+  background: #15803d;
+  color: #ffffff;
+  border-radius: 16px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 8px 28px rgba(21, 128, 61, 0.4);
+  z-index: 95;
+  cursor: pointer;
+  transition: transform 0.16s ease;
+}
+
+.instamart-bottom-cart-bar:active {
+  transform: scale(0.98);
+}
+
+@media (min-width: 768px) {
+  .instamart-bottom-cart-bar {
+    bottom: 24px;
+    left: auto;
+    right: 28px;
+    width: 380px;
+  }
+}
+
+
 
 
 
