@@ -597,16 +597,18 @@ app.patch('/api/admin/orders/:id/status', authorize('admin'), async (req, res) =
   const { status } = req.body || {}
   const valid = ['received', 'confirmed', 'packed', 'shipped', 'delivered', 'cancelled']
   if (!valid.includes(status)) return res.status(400).json({ error: 'Invalid status' })
-  const result = await pool.query('UPDATE orders SET status=$1 WHERE id=$2 RETURNING *', [status, req.params.id])
+  const result = await pool.query('UPDATE orders SET status=$1 WHERE order_no=$2 OR id::text=$2 RETURNING *', [status, req.params.id])
   if (!result.rowCount) return res.status(404).json({ error: 'Order not found' })
   res.json({ success: true, order: result.rows[0] })
 })
 
 app.delete('/api/admin/orders/:id', authorize('admin'), async (req, res) => {
   try {
-    await pool.query('DELETE FROM order_items WHERE order_id=$1', [req.params.id])
-    const result = await pool.query('DELETE FROM orders WHERE id=$1', [req.params.id])
-    if (!result.rowCount) return res.status(404).json({ error: 'Order not found' })
+    const orderRes = await pool.query('SELECT id FROM orders WHERE order_no=$1 OR id::text=$1', [req.params.id])
+    if (!orderRes.rowCount) return res.status(404).json({ error: 'Order not found' })
+    const internalId = orderRes.rows[0].id
+    await pool.query('DELETE FROM order_items WHERE order_id=$1', [internalId])
+    await pool.query('DELETE FROM orders WHERE id=$1', [internalId])
     res.json({ success: true, deleted: true })
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete order' })
