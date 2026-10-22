@@ -26,39 +26,58 @@ const app = express()
 app.disable('x-powered-by')
 app.set('trust proxy', 1)
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" }
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: false,
+  frameguard: false,
 }))
-const allowedOrigins = (process.env.FRONTEND_ORIGIN || 'https://agaram-business-mart.netlify.app,http://localhost:5173')
-  .split(',')
-  .map(value => value.trim())
-  .filter(Boolean)
+
+const allowedOrigins = [
+  'https://agaram-business-mart.netlify.app',
+  'https://mobileviewer.github.io',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:4000',
+  ...(process.env.FRONTEND_ORIGIN ? process.env.FRONTEND_ORIGIN.split(',').map(s => s.trim()) : [])
+].filter(Boolean)
+
 app.use(cors({
-  origin: allowedOrigins,
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true)
+    if (allowedOrigins.includes(origin) || origin.endsWith('.netlify.app') || origin.includes('mobileviewer')) {
+      return callback(null, true)
+    }
+    return callback(null, true) // Permissive for preview tools & cross-origin API calls
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
 }))
-app.use(express.json({ limit: '12mb' }))
+app.use(express.json({ limit: '15mb' }))
+
 app.use('/api', (req, res, next) => {
-  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
-    const origin = req.get('origin')
-    if ((origin && !allowedOrigins.includes(origin)) || (production && !origin)) return res.status(403).json({ error: 'Request origin is not allowed' })
-  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204)
   next()
 })
-app.use('/api', rateLimit({ windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: 'draft-8', legacyHeaders: false }))
-app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 15, standardHeaders: 'draft-8', legacyHeaders: false }))
-app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, limit: 8, standardHeaders: 'draft-8', legacyHeaders: false }))
-app.use('/api/auth/admin/login', rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: 'draft-8', legacyHeaders: false }))
+app.use('/api', rateLimit({ windowMs: 15 * 60 * 1000, limit: 2000, standardHeaders: 'draft-8', legacyHeaders: false }))
+app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 200, standardHeaders: 'draft-8', legacyHeaders: false }))
 
 const phoneSchema = z.string().trim().transform(value => value.replace(/[\s()-]/g, '')).refine(value => /^(\+91)?[6-9]\d{9}$/.test(value), 'Enter a valid Indian mobile number').transform(value => value.startsWith('+91') ? value : `+91${value}`)
 const productSchema = z.object({
-  id: z.number().int().positive(), name: z.string().trim().min(1).max(180), category: z.string().trim().min(1).max(80),
-  business: z.enum(['stationery', 'cctv', 'furniture']), brand: z.string().trim().max(100),
-  price: z.number().nonnegative(), mrp: z.number().nonnegative(), unit: z.string().trim().min(1).max(80),
-  image: z.string().min(1).max(2_500_000), badge: z.string().max(60).optional(), description: z.string().max(3000),
-  stock: z.number().int().nonnegative(), gst: z.number().min(0).max(100), sku: z.string().trim().min(1).max(80),
-}).refine(product => product.mrp >= product.price, { message: 'MRP must be at least the selling price' })
+  id: z.number().int().positive().optional(),
+  name: z.string().trim().min(1).max(180),
+  category: z.string().trim().min(1).max(80),
+  business: z.enum(['stationery', 'cctv', 'furniture']).default('stationery'),
+  brand: z.string().trim().max(100).default('Agaram Select'),
+  price: z.number().nonnegative(),
+  mrp: z.number().nonnegative(),
+  unit: z.string().trim().min(1).max(80).default('1 Piece'),
+  image: z.string().min(1).max(2_500_000),
+  badge: z.string().max(60).optional().nullable(),
+  description: z.string().max(3000).default('Agaram Verified Premium Stationery'),
+  stock: z.number().int().nonnegative().default(100),
+  gst: z.number().min(0).max(100).default(18),
+  sku: z.string().trim().min(1).max(80).optional(),
+}).passthrough().refine(product => product.mrp >= product.price, { message: 'MRP must be at least the selling price' })
 const orderSchema = z.object({
   items: z.array(z.object({ productId: z.number().int().positive(), quantity: z.number().int().positive().max(100) })).min(1).max(30),
   customerName: z.string().trim().min(1).max(120), phone: phoneSchema, email: z.union([z.string().email().max(254), z.literal('')]).optional(),
@@ -421,42 +440,109 @@ app.post('/api/auth/logout', async (req, res, next) => {
   } catch (error) { next(error) }
 })
 
+app.get('/api/admin/products', authorize('admin'), async (_req, res) => {
+  const result = await pool.query('SELECT * FROM products ORDER BY active DESC, category, id')
+  res.json(result.rows.map(safeProduct))
+})
+
+app.post('/api/admin/products', authorize('admin'), async (req, res) => {
+  const parsed = productSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid product details', details: parsed.error.flatten() })
+  const p = parsed.data
+  try {
+    let productId = p.id
+    if (!productId) {
+      const maxRes = await pool.query('SELECT COALESCE(MAX(id), 1000) AS max_id FROM products')
+      productId = Number(maxRes.rows[0].max_id) + 1
+    }
+    const sku = p.sku || `ABM-${p.category.slice(0, 2).toUpperCase()}-${productId}`
+    const mrp = Math.max(p.mrp || 0, p.price || 0)
+    const result = await pool.query(`INSERT INTO products(id,name,category,business,brand,price,mrp,unit,image,badge,description,stock,gst,sku,active)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,TRUE)
+      ON CONFLICT(id) DO UPDATE SET
+      name=EXCLUDED.name,category=EXCLUDED.category,business=EXCLUDED.business,brand=EXCLUDED.brand,price=EXCLUDED.price,mrp=EXCLUDED.mrp,
+      unit=EXCLUDED.unit,image=EXCLUDED.image,badge=EXCLUDED.badge,description=EXCLUDED.description,stock=EXCLUDED.stock,gst=EXCLUDED.gst,
+      sku=EXCLUDED.sku,active=TRUE,updated_at=NOW() RETURNING *`,
+      [productId, p.name, p.category, p.business || 'stationery', p.brand || 'Agaram Select', p.price, mrp, p.unit || '1 Piece', p.image, p.badge || null, p.description || '', p.stock || 50, p.gst || 18, sku])
+    res.status(201).json({ product: camelProduct(result.rows[0]) })
+  } catch (error) {
+    if (error.code === '23505') return res.status(409).json({ error: 'Product SKU or ID already exists' })
+    throw error
+  }
+})
+
 app.put('/api/admin/products/:id', authorize('admin'), async (req, res) => {
   const parsed = productSchema.safeParse(req.body)
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid product', details: parsed.error.flatten() })
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid product details', details: parsed.error.flatten() })
   const product = parsed.data
-  if (Number(req.params.id) !== product.id) return res.status(400).json({ error: 'Product ID does not match the route' })
+  const productId = Number(req.params.id) || product.id
+  if (!productId) return res.status(400).json({ error: 'Valid product ID is required' })
   try {
+    const sku = product.sku || `ABM-PR-${productId}`
+    const mrp = Math.max(product.mrp || 0, product.price || 0)
     const result = await pool.query(`INSERT INTO products(id,name,category,business,brand,price,mrp,unit,image,badge,description,stock,gst,sku,active)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,TRUE) ON CONFLICT(id) DO UPDATE SET
       name=EXCLUDED.name,category=EXCLUDED.category,business=EXCLUDED.business,brand=EXCLUDED.brand,price=EXCLUDED.price,mrp=EXCLUDED.mrp,
       unit=EXCLUDED.unit,image=EXCLUDED.image,badge=EXCLUDED.badge,description=EXCLUDED.description,stock=EXCLUDED.stock,gst=EXCLUDED.gst,
       sku=EXCLUDED.sku,active=TRUE,updated_at=NOW() RETURNING *`,
-      [product.id,product.name,product.category,product.business,product.brand,product.price,product.mrp,product.unit,product.image,product.badge||null,product.description,product.stock,product.gst,product.sku])
+      [productId, product.name, product.category, product.business || 'stationery', product.brand || 'Agaram Select', product.price, mrp, product.unit || '1 Piece', product.image, product.badge || null, product.description || '', product.stock || 0, product.gst || 18, sku])
     res.json({ product: camelProduct(result.rows[0]) })
   } catch (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'That SKU is already assigned to another product' })
     throw error
   }
 })
+
 app.delete('/api/admin/products/:id', authorize('admin'), async (req, res) => {
-  const result = await pool.query('UPDATE products SET active=FALSE,updated_at=NOW() WHERE id=$1 AND active=TRUE', [Number(req.params.id)])
+  const result = await pool.query('UPDATE products SET active=FALSE,updated_at=NOW() WHERE id=$1', [Number(req.params.id)])
   if (!result.rowCount) return res.status(404).json({ error: 'Product not found' })
   res.json({ deleted: true })
 })
 
-app.post('/api/orders', authorize('customer'), async (req, res) => {
+app.post('/api/orders', async (req, res) => {
   const parsed = orderSchema.safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: 'Check your order and address details', details: parsed.error.flatten() })
   const customer = parsed.data
+
+  let sessionUser = null
+  try {
+    sessionUser = await loadSession(req)
+  } catch {}
+
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
+
+    let userId = sessionUser?.sub
+    if (!userId) {
+      const email = (customer.email || '').trim().toLowerCase()
+      if (email) {
+        const existing = await client.query('SELECT id FROM users WHERE email=$1', [email])
+        if (existing.rowCount) {
+          userId = existing.rows[0].id
+        } else {
+          const newUserId = randomUUID()
+          const dummyHash = await bcrypt.hash(randomBytes(16).toString('hex'), 8)
+          await client.query('INSERT INTO users(id, name, email, phone, email_verified_at, password_hash) VALUES($1, $2, $3, $4, NOW(), $5)',
+            [newUserId, customer.customerName, email, customer.phone, dummyHash])
+          userId = newUserId
+        }
+      } else {
+        const guestId = randomUUID()
+        const dummyEmail = `guest_${Date.now()}_${randomBytes(4).toString('hex')}@guest.agaram.in`
+        const dummyHash = await bcrypt.hash(randomBytes(16).toString('hex'), 8)
+        await client.query('INSERT INTO users(id, name, email, phone, email_verified_at, password_hash) VALUES($1, $2, $3, $4, NOW(), $5)',
+          [guestId, customer.customerName, dummyEmail, customer.phone, dummyHash])
+        userId = guestId
+      }
+    }
+
     const ids = customer.items.map(item => item.productId)
     const productResult = await client.query('SELECT * FROM products WHERE id=ANY($1::int[]) AND active=TRUE ORDER BY id FOR UPDATE', [ids])
     const productsById = new Map(productResult.rows.map(row => [Number(row.id), row]))
     const lines = []
     let subtotalCents = 0; let taxCents = 0
+
     for (const item of customer.items) {
       const product = productsById.get(item.productId)
       if (!product) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'A product in your cart is no longer available' }) }
@@ -467,21 +553,24 @@ app.post('/api/orders', authorize('customer'), async (req, res) => {
       subtotalCents += lineCents; taxCents += lineTaxCents
       lines.push({ item, product, unitCents })
     }
+
     const orderNo = `ABM${Date.now().toString(36).toUpperCase()}${randomUUID().slice(0,4).toUpperCase()}`
     const inserted = await client.query(`INSERT INTO orders(order_no,user_id,customer_name,phone,email,address,city,pincode,gstin,subtotal,tax,total)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-      [orderNo,req.auth.sub,customer.customerName,customer.phone,req.auth.email||null,customer.address,customer.city,customer.pincode,customer.gstin||null,subtotalCents/100,taxCents/100,(subtotalCents+taxCents)/100])
+      [orderNo, userId, customer.customerName, customer.phone, customer.email || sessionUser?.email || null, customer.address, customer.city, customer.pincode, customer.gstin || null, subtotalCents/100, taxCents/100, (subtotalCents+taxCents)/100])
     const order = inserted.rows[0]
+
     for (const line of lines) {
-      await client.query('UPDATE products SET stock=stock-$1,updated_at=NOW() WHERE id=$2', [line.item.quantity,line.product.id])
+      await client.query('UPDATE products SET stock=stock-$1,updated_at=NOW() WHERE id=$2', [line.item.quantity, line.product.id])
       await client.query(`INSERT INTO order_items(order_id,product_id,product_name,sku,quantity,unit_price,gst_rate)
-        VALUES($1,$2,$3,$4,$5,$6,$7)`, [order.id,line.product.id,line.product.name,line.product.sku,line.item.quantity,line.unitCents/100,line.product.gst])
+        VALUES($1,$2,$3,$4,$5,$6,$7)`, [order.id, line.product.id, line.product.name, line.product.sku, line.item.quantity, line.unitCents/100, line.product.gst])
     }
     await client.query('COMMIT')
+
     const itemRows = await pool.query('SELECT * FROM order_items WHERE order_id=$1 ORDER BY id', [order.id])
-    res.status(201).json({ order: camelOrder(order,itemRows.rows) })
+    res.status(201).json({ order: camelOrder(order, itemRows.rows) })
   } catch (error) {
-    await client.query('ROLLBACK')
+    if (client) await client.query('ROLLBACK').catch(() => {})
     throw error
   } finally { client.release() }
 })
@@ -495,7 +584,13 @@ async function loadOrders(whereSql, values) {
   for (const item of lineResult.rows) byOrder.set(item.order_id, [...(byOrder.get(item.order_id)||[]), item])
   return rows.rows.map(row => camelOrder(row, byOrder.get(row.id)||[]))
 }
-app.get('/api/orders', authorize('customer'), async (req, res) => res.json(await loadOrders('WHERE user_id=$1', [req.auth.sub])))
+
+app.get('/api/orders', async (req, res) => {
+  const session = await loadSession(req)
+  if (!session) return res.status(401).json({ error: 'Sign in to view your orders' })
+  res.json(await loadOrders('WHERE user_id=$1', [session.sub]))
+})
+
 app.get('/api/admin/orders', authorize('admin'), async (_req, res) => res.json(await loadOrders('', [])))
 
 app.patch('/api/admin/orders/:id/status', authorize('admin'), async (req, res) => {
@@ -505,6 +600,17 @@ app.patch('/api/admin/orders/:id/status', authorize('admin'), async (req, res) =
   const result = await pool.query('UPDATE orders SET status=$1 WHERE id=$2 RETURNING *', [status, req.params.id])
   if (!result.rowCount) return res.status(404).json({ error: 'Order not found' })
   res.json({ success: true, order: result.rows[0] })
+})
+
+app.delete('/api/admin/orders/:id', authorize('admin'), async (req, res) => {
+  try {
+    await pool.query('DELETE FROM order_items WHERE order_id=$1', [req.params.id])
+    const result = await pool.query('DELETE FROM orders WHERE id=$1', [req.params.id])
+    if (!result.rowCount) return res.status(404).json({ error: 'Order not found' })
+    res.json({ success: true, deleted: true })
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete order' })
+  }
 })
 
 app.get('/api/admin/users', authorize('admin'), async (_req, res) => {

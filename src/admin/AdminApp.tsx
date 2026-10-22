@@ -6,7 +6,8 @@ import {
 } from 'lucide-react'
 import {
   API_URL, fetchProducts, saveProduct, deleteProduct, fetchAdminOrders,
-  fetchAdminUsers, fetchAdminStats, updateOrderStatus, adminLogin, getSession, logout,
+  fetchAdminUsers, fetchAdminStats, updateOrderStatus, deleteAdminOrder,
+  pingBackend, adminLogin, getSession, logout,
   type ApiOrder, type ApiUser, type AdminStats
 } from '../api'
 import { categories, brands, money, type Product, type CategorySlug } from '../data/products'
@@ -115,42 +116,103 @@ export function AdminApp() {
     setAuth(false)
   }
 
-  // Handle Save / Add Product
+  // Pre-warm backend
+  useEffect(() => {
+    pingBackend()
+  }, [])
+
+  // Handle Save / Add Product (Optimistic + Neon DB)
   const handleSaveProduct = async (p: Product) => {
+    const safeProduct: Product = {
+      ...p,
+      business: p.business || 'stationery',
+      mrp: Math.max(Number(p.mrp) || 0, Number(p.price) || 0),
+      price: Number(p.price) || 0,
+      stock: Number(p.stock) || 0,
+      gst: Number(p.gst) || 18,
+      unit: p.unit || '1 Piece',
+      brand: p.brand || 'Agaram Select',
+      description: p.description || 'Agaram Verified Premium Stationery',
+      sku: p.sku || `ABM-${p.category?.slice(0, 2).toUpperCase()}-${p.id}`,
+    }
+
+    // 0ms Optimistic UI update
+    setProducts(prev => {
+      const idx = prev.findIndex(item => item.id === safeProduct.id)
+      if (idx >= 0) {
+        const copy = [...prev]
+        copy[idx] = safeProduct
+        return copy
+      }
+      return [safeProduct, ...prev]
+    })
+    setIsAddingProduct(false)
+    setEditingProduct(null)
+    setStatusMessage(`Product #${safeProduct.id} saved! Syncing with Neon DB...`)
+
     try {
-      await saveProduct(p)
-      setStatusMessage(`Product #${p.id} saved to Neon DB successfully!`)
-      setIsAddingProduct(false)
-      setEditingProduct(null)
+      await saveProduct(safeProduct)
+      setStatusMessage(`✓ Product #${safeProduct.id} synced with Neon DB!`)
       refreshAllData()
       setTimeout(() => setStatusMessage(''), 4000)
     } catch (err: any) {
-      alert(`Error saving product: ${err.message}`)
+      alert(`Error saving to Neon DB: ${err.message}`)
+      refreshAllData()
     }
   }
 
-  // Handle Delete Product
+  // Handle Quick Inline Stock Adjust
+  const handleQuickStock = async (product: Product, delta: number) => {
+    const updatedStock = Math.max(0, (product.stock || 0) + delta)
+    const updatedProd = { ...product, stock: updatedStock }
+    setProducts(prev => prev.map(p => p.id === product.id ? updatedProd : p))
+    try {
+      await saveProduct(updatedProd)
+    } catch (err: any) {
+      console.error('Failed to sync stock change:', err)
+    }
+  }
+
+  // Handle Delete Product (Optimistic + Neon DB)
   const handleDeleteProduct = async (id: number) => {
     if (!window.confirm(`Are you sure you want to delete Product #${id} from the live store?`)) return
+    setProducts(prev => prev.filter(p => p.id !== id))
+    setStatusMessage(`Product #${id} removed! Updating Neon DB...`)
     try {
       await deleteProduct(id)
-      setStatusMessage(`Product #${id} removed from live catalog!`)
+      setStatusMessage(`✓ Product #${id} deleted from Neon DB!`)
       refreshAllData()
       setTimeout(() => setStatusMessage(''), 4000)
     } catch (err: any) {
       alert(`Error deleting product: ${err.message}`)
+      refreshAllData()
     }
   }
 
-  // Handle Order Status Update
+  // Handle Order Status Update (Optimistic + Neon DB)
   const handleUpdateOrderStatus = async (orderId: string, status: string) => {
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } as any : o))
+    setStatusMessage(`Order #${orderId} marked as ${status.toUpperCase()}!`)
     try {
       await updateOrderStatus(orderId, status)
-      setStatusMessage(`Order #${orderId} marked as ${status.toUpperCase()}!`)
-      refreshAllData()
-      setTimeout(() => setStatusMessage(''), 4000)
+      setTimeout(() => setStatusMessage(''), 3000)
     } catch (err: any) {
       alert(`Error updating order status: ${err.message}`)
+      refreshAllData()
+    }
+  }
+
+  // Handle Delete Order (Test Orders)
+  const handleDeleteOrder = async (orderId: string) => {
+    if (!window.confirm(`Delete Order #${orderId} permanently from database?`)) return
+    setOrders(prev => prev.filter(o => o.id !== orderId))
+    try {
+      await deleteAdminOrder(orderId)
+      setStatusMessage(`✓ Order #${orderId} deleted!`)
+      setTimeout(() => setStatusMessage(''), 3000)
+    } catch (err: any) {
+      alert(`Failed to delete order: ${err.message}`)
+      refreshAllData()
     }
   }
 
@@ -519,13 +581,30 @@ export function AdminApp() {
                         <td style={{ fontWeight: 800, color: '#10b981' }}>{money(p.price)}</td>
                         <td style={{ fontSize: '11.5px', color: 'var(--admin-text-soft)', textDecoration: 'line-through' }}>{money(p.mrp)}</td>
                         <td>
-                          <span style={{
-                            padding: '2px 7px', borderRadius: '6px', fontSize: '11px', fontWeight: 800,
-                            background: p.stock <= 5 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                            color: p.stock <= 5 ? '#f87171' : '#34d399'
-                          }}>
-                            {p.stock} in stock
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <span style={{
+                              padding: '2px 7px', borderRadius: '6px', fontSize: '11px', fontWeight: 800,
+                              background: p.stock <= 5 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                              color: p.stock <= 5 ? '#f87171' : '#34d399'
+                            }}>
+                              {p.stock}
+                            </span>
+                            <button
+                              onClick={() => handleQuickStock(p, -5)}
+                              disabled={p.stock <= 0}
+                              title="Decrease stock by 5"
+                              style={{ border: '1px solid var(--admin-border)', background: 'var(--admin-bg)', color: 'var(--admin-text-soft)', padding: '2px 5px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer' }}
+                            >
+                              -5
+                            </button>
+                            <button
+                              onClick={() => handleQuickStock(p, 10)}
+                              title="Restock +10 units"
+                              style={{ border: '1px solid var(--admin-border)', background: 'var(--admin-bg)', color: '#10b981', padding: '2px 5px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer', fontWeight: 700 }}
+                            >
+                              +10
+                            </button>
+                          </div>
                         </td>
                         <td style={{ fontSize: '11.5px' }}>{p.gst || 18}%</td>
                         <td style={{ textAlign: 'right' }}>
@@ -647,6 +726,14 @@ export function AdminApp() {
                                 style={{ padding: '6px 10px', fontSize: '11px' }}
                               >
                                 <Eye size={13} /> View / Invoice
+                              </button>
+                              <button
+                                onClick={() => handleDeleteOrder(order.id)}
+                                className="admin-btn admin-btn-secondary"
+                                style={{ padding: '6px 8px', fontSize: '11px', color: '#ef4444' }}
+                                title="Delete order permanently"
+                              >
+                                <Trash2 size={13} />
                               </button>
                             </div>
                           </td>

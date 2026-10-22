@@ -14,7 +14,7 @@ import {
 import {
   API_URL, fetchProducts, validateCoupon, createOrder, fetchOrders,
   fetchAdminOrders, adminLogin, customerLogin, signUp, verifyEmail, logout, getSession,
-  saveProduct, deleteProduct, type ApiOrder
+  saveProduct, deleteProduct, pingBackend, type ApiOrder
 } from './api'
 import { MapLocationPickerModal } from './components/MapLocationPickerModal'
 import { DeliveryPartnerLiveMapModal } from './components/DeliveryPartnerLiveMapModal'
@@ -237,6 +237,7 @@ export default function App() {
 
   // Load backend session and products
   useEffect(() => {
+    pingBackend()
     fetchProducts().then(setProducts).catch(() => {})
     getSession().then(res => {
       if (res && res.user) setCurrentUser(res.user)

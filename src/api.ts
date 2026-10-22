@@ -59,6 +59,15 @@ async function request<T>(route: string, options: RequestInit = {}): Promise<T> 
   return body as T
 }
 
+export const pingBackend = async (): Promise<boolean> => {
+  try {
+    const res = await fetch(`${API_URL}/api/health`, { method: 'GET', signal: AbortSignal.timeout(6000) })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 export const fetchProducts = async (): Promise<Product[]> => {
   try {
     const data = await request<Product[]>('/api/products')
@@ -138,6 +147,9 @@ export const fetchAdminOrders = () =>
 
 export const updateOrderStatus = (orderId: string, status: string) =>
   request<{ success: boolean; order: any }>(`/api/admin/orders/${orderId}/status`, { method: 'PATCH', body: JSON.stringify({ status }) })
+
+export const deleteAdminOrder = (orderId: string) =>
+  request<{ success: boolean }>(`/api/admin/orders/${orderId}`, { method: 'DELETE' })
 
 export const fetchAdminUsers = () =>
   request<ApiUser[]>('/api/admin/users')

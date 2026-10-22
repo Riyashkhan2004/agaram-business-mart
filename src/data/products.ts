@@ -54,6 +54,7 @@ export type Product = {
   name: string
   nameTa?: string
   category: CategorySlug
+  business?: 'stationery' | 'cctv' | 'furniture'
   subcategory?: string
   brand: string
   price: number
