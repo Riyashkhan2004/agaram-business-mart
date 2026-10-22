@@ -158,64 +158,6 @@ export function ProductGridSkeleton({ count = 6 }: { count?: number }) {
   )
 }
 
-export function LiveSocialProofToast({ lang = 'en' }: { lang?: Language }) {
-  const [currentIdx, setCurrentIdx] = useState(0)
-  const [visible, setVisible] = useState(true)
-  const [dismissed, setDismissed] = useState(false)
-
-  const items = useMemo(() => [
-    { city: 'Cuddalore', name: 'Ramesh', item: 'JK Copier A4 Paper 75 GSM (Carton)', time: '2m ago', icon: '🖨️' },
-    { city: 'Chennai', name: 'Priya S.', item: 'Morandi Aesthetic Gel Pens 9-Pack', time: '5m ago', icon: '✨' },
-    { city: 'Villupuram', name: 'Balaji Xerox', item: '10x Reams 75 GSM & Refill Inks', time: '11m ago', icon: '🏪' },
-    { city: 'Coimbatore', name: 'Divya M.', item: 'Pastel Highlighters 6-Color Set', time: '17m ago', icon: '🎨' },
-    { city: 'Pondicherry', name: 'Karthik', item: 'Hardbound Dot-Grid Bullet Journal A5', time: '24m ago', icon: '📓' },
-    { city: 'Salem', name: 'Sri Vidya School', item: 'School Exam Essentials Stationery Combo', time: '36m ago', icon: '🎒' },
-  ], [])
-
-  useEffect(() => {
-    if (dismissed) return
-    const interval = setInterval(() => {
-      setVisible(false)
-      setTimeout(() => {
-        setCurrentIdx(prev => (prev + 1) % items.length)
-        setVisible(true)
-      }, 500)
-    }, 14000)
-    return () => clearInterval(interval)
-  }, [items.length, dismissed])
-
-  if (dismissed) return null
-  const current = items[currentIdx]
-
-  return (
-    <div
-      className={`social-proof-toast ${visible ? 'toast-visible' : 'toast-hidden'}`}
-      onClick={() => setDismissed(true)}
-    >
-      <div className="social-proof-icon">{current.icon}</div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: '11.5px', fontWeight: 800, color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {current.name} from {current.city}
-        </div>
-        <div style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {lang === 'ta' ? 'வாங்கிய பொருள்: ' : 'Purchased '} {current.item}
-        </div>
-        <div style={{ fontSize: '9.5px', color: '#16a34a', fontWeight: 700, marginTop: '1px' }}>
-          ✓ {lang === 'ta' ? 'உறுதிப்படுத்தப்பட்ட ஆர்டர்' : 'Verified Order'} · {current.time}
-        </div>
-      </div>
-      <button
-        type="button"
-        onClick={e => { e.stopPropagation(); setDismissed(true) }}
-        style={{ background: 'none', border: 'none', color: 'var(--text-soft)', cursor: 'pointer', padding: '2px' }}
-        title="Dismiss"
-      >
-        <X size={13} />
-      </button>
-    </div>
-  )
-}
-
 export default function App() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -364,7 +306,6 @@ export default function App() {
             </button>
             <Link to="/about">{t[lang].aboutUs}</Link>
             <Link to="/contact">{t[lang].helpSupport}</Link>
-            <Link to="/admin">{t[lang].admin}</Link>
           </div>
         </div>
       </div>
@@ -629,9 +570,7 @@ export default function App() {
               }}
             />
           } />
-          <Route path="/admin" element={
-            <AdminPage products={products} setProducts={setProducts} lang={lang} />
-          } />
+          <Route path="/admin" element={<AdminRedirect />} />
           <Route path="/verify-email" element={<VerifyEmailPage setCurrentUser={setCurrentUser} />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/contact" element={<ContactPage />} />
@@ -900,9 +839,6 @@ export default function App() {
         </Link>
       </nav>
 
-      {/* 9. LIVE SOCIAL PROOF PURCHASE TOAST */}
-      <LiveSocialProofToast lang={lang} />
-
       {/* 8. FOOTER */}
       <footer className="site-footer">
         <div className="container footer-grid">
@@ -943,7 +879,6 @@ export default function App() {
               <li><Link to="/contact">Shipping Policy</Link></li>
               <li><Link to="/contact">Institutional Bulk Quotes</Link></li>
               <li><Link to="/about">About Agaram</Link></li>
-              <li><Link to="/admin">Administrator Portal</Link></li>
             </ul>
           </div>
 
@@ -1666,38 +1601,6 @@ function HomePage({
           })}
         </div>
       </section>
-
-      {/* FLOATING BOTTOM CART PILL (Image 2) */}
-      {cart.length > 0 && (
-        <div className="floating-cart-pill">
-          <div className="cart-pill-progress-bar">
-            <span>🛵</span>
-            {cartSubtotal >= 500 ? (
-              <span><b>Free Express Delivery Unlocked!</b> Dispatching today.</span>
-            ) : (
-              <span>Add <b>{money(500 - cartSubtotal)}</b> more to unlock <b>FREE DELIVERY</b></span>
-            )}
-          </div>
-          <div className="cart-pill-body">
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <div className="cart-pill-thumbs">
-                {cartItemsPreview.slice(0, 3).map(p => (
-                  <img key={p.id} src={p.image} alt="" className="cart-pill-thumb" />
-                ))}
-              </div>
-              <div className="cart-pill-info">
-                <div className="cart-pill-items-title">{totalCartCount} {totalCartCount === 1 ? 'Item' : 'Items'} · {money(cartSubtotal)}</div>
-                {cartSavings > 0 && (
-                  <div className="cart-pill-savings">₹{Math.round(cartSavings)} saved, more coming up!</div>
-                )}
-              </div>
-            </div>
-            <button className="cart-pill-btn" onClick={openCartDrawer}>
-              Go to Cart <ChevronRight size={14} />
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -1723,10 +1626,11 @@ function ProductCard({
   const discountPct = Math.round(((product.mrp - currentPrice) / product.mrp) * 100)
   const tiers = getProductTiers(product)
   const displayName = (lang === 'ta' && product.nameTa) ? product.nameTa : product.name
+  const bulkTier = tiers.find(t => t.minQty > 1)
 
   return (
     <div className="product-card">
-      {/* Top Left Discount Badge (Image 3) */}
+      {/* Top Left Discount Badge */}
       {discountPct > 0 ? (
         <span className="card-badge" style={{ color: '#16a34a', borderColor: '#bbf7d0', background: 'rgba(240, 253, 244, 0.95)' }}>
           {discountPct}% {lang === 'ta' ? 'தள்ளுபடி' : 'OFF'}
@@ -1735,13 +1639,13 @@ function ProductCard({
         <span className="card-badge">{product.badge}</span>
       ) : null}
 
-      {/* Top Right Wishlist Heart (Image 3) */}
+      {/* Top Right Wishlist Heart */}
       <button
         className={`wish-button ${isWished ? 'active' : ''}`}
         onClick={onToggleWish}
         title={isWished ? (lang === 'ta' ? 'விருப்பத்திலிருந்து நீக்கு' : 'Remove from wishlist') : (lang === 'ta' ? 'விருப்பத்தில் சேர்' : 'Save to wishlist')}
       >
-        <Heart size={15} fill={isWished ? 'currentColor' : 'none'} />
+        <Heart size={14} fill={isWished ? 'currentColor' : 'none'} />
       </button>
 
       {/* Image with Delivery Speed Tag */}
@@ -1749,92 +1653,63 @@ function ProductCard({
         <img src={product.image} alt={displayName} loading="lazy" />
         {product.deliveryTime && (
           <span className="card-flash-pill" style={{ background: 'rgba(22, 101, 52, 0.92)' }}>
-            <Zap size={10} /> {lang === 'ta' ? '30 நிமிடம்' : product.deliveryTime}
+            <Zap size={9} /> {lang === 'ta' ? '30 நிமிடம்' : product.deliveryTime}
           </span>
         )}
       </Link>
 
-      {/* Content */}
+      {/* Compact Content */}
       <div className="product-content">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '3px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span className="product-brand">{product.brand}</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', fontWeight: 800, color: '#b45309', background: 'rgba(245, 158, 11, 0.12)', padding: '1px 5px', borderRadius: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9.5px', fontWeight: 800, color: '#b45309', background: 'rgba(245, 158, 11, 0.12)', padding: '1px 4px', borderRadius: '4px' }}>
               ★ {product.rating || 4.8}
             </span>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                if (navigator.share) {
-                  navigator.share({
-                    title: displayName,
-                    text: `Check out ${displayName} at Agaram Stationery Mart!`,
-                    url: `${window.location.origin}/product/${product.id}`,
-                  }).catch(() => {})
-                } else {
-                  navigator.clipboard.writeText(`${window.location.origin}/product/${product.id}`)
-                  alert(lang === 'ta' ? 'பொருள் இணைப்பு நகலெடுக்கப்பட்டது!' : 'Product link copied to clipboard!')
-                }
-              }}
-              title={lang === 'ta' ? 'பகிர்க' : 'Share product'}
-              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-soft)', padding: '1px', display: 'flex', alignItems: 'center' }}
-            >
-              <Share2 size={12} />
-            </button>
           </div>
         </div>
+
         <Link to={`/product/${product.id}`} className="product-title" title={displayName}>
           {displayName}
         </Link>
 
-        {/* IMAGE 3: LOTS WHOLESALE TIERED PRICING SLABS */}
-        <div className="tiered-pricing-box">
-          {tiers.slice(0, 2).map((tier, idx) => {
-            const isMatch = currentQty >= tier.minQty && (!tier.maxQty || currentQty <= tier.maxQty)
-            return (
-              <div key={idx} className={`tier-row ${isMatch ? 'active' : ''}`}>
-                <span className="tier-qty">{tier.label}</span>
-                <span className="tier-price-val">
-                  {money(tier.price)} <span className="tier-off">({tier.discountPct}% {lang === 'ta' ? 'தள்ளுபடி' : 'OFF'})</span>
-                </span>
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Pricing Row: MRP strikethrough & Active Price */}
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '8px' }}>
-          <div>
-            <div style={{ fontSize: '11px', color: 'var(--text-soft)', textDecoration: 'line-through' }}>
-              {lang === 'ta' ? 'அ.வி ' : 'MRP '} {money(product.mrp)}
-            </div>
-            <div style={{ fontSize: '16px', fontWeight: 900, color: 'var(--text-main)' }}>
-              {money(currentPrice)}
-            </div>
+        {/* Compact 1-Line Bulk Slab Pill (Smaller not longer) */}
+        {bulkTier ? (
+          <div className="compact-bulk-tag">
+            <span className="compact-bulk-badge">BULK</span>
+            <span className="compact-bulk-text">{bulkTier.minQty}+ units at {money(bulkTier.price)} ({bulkTier.discountPct}% OFF)</span>
           </div>
-          <span style={{ fontSize: '10px', color: 'var(--text-muted)', background: 'rgba(0,0,0,0.04)', padding: '2px 6px', borderRadius: '4px' }}>
-            {product.unit}
-          </span>
+        ) : (
+          <div style={{ minHeight: '18px' }} />
+        )}
+
+        {/* Horizontal Price Row */}
+        <div className="compact-price-row">
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '5px' }}>
+            <span className="compact-price-main">{money(currentPrice)}</span>
+            {product.mrp > currentPrice && (
+              <span className="compact-price-mrp">{money(product.mrp)}</span>
+            )}
+          </div>
+          <span className="compact-unit-pill">{product.unit}</span>
         </div>
 
-        {/* Red Lots Wholesale Add Button / Stepper (Image 3) */}
+        {/* Compact Add Button / Stepper */}
         <div className="card-actions" style={{ marginTop: 'auto' }}>
           {cartQty > 0 ? (
-            <div className="qty-stepper" style={{ width: '100%', justifyContent: 'space-between' }}>
+            <div className="qty-stepper" style={{ width: '100%', justifyContent: 'space-between', height: '30px' }}>
               <button className="qty-btn" onClick={() => onUpdateCartQty ? onUpdateCartQty(cartQty - 1) : null}>
-                <Minus size={12} />
+                <Minus size={11} />
               </button>
-              <span className="qty-value" style={{ fontWeight: 800 }}>{cartQty}</span>
+              <span className="qty-value" style={{ fontWeight: 800, fontSize: '12px' }}>{cartQty}</span>
               <button className="qty-btn" onClick={() => onUpdateCartQty ? onUpdateCartQty(cartQty + 1) : null}>
-                <Plus size={12} />
+                <Plus size={11} />
               </button>
             </div>
           ) : (
             <button
               className="lots-add-btn"
-              style={{ width: '100%' }}
+              style={{ width: '100%', height: '30px', fontSize: '11.5px', fontWeight: 800 }}
               onClick={onAddToCart}
             >
               {lang === 'ta' ? 'சேர்' : 'ADD'}
@@ -2059,38 +1934,6 @@ function CategoryPage({
           </div>
         </main>
       </div>
-
-      {/* FLOATING BOTTOM CART PILL (Image 2) */}
-      {cart.length > 0 && (
-        <div className="floating-cart-pill">
-          <div className="cart-pill-progress-bar">
-            <span>🛵</span>
-            {cartSubtotal >= 500 ? (
-              <span><b>Free Delivery Unlocked!</b> Priority courier dispatch.</span>
-            ) : (
-              <span>Add <b>{money(500 - cartSubtotal)}</b> more to unlock <b>FREE DELIVERY</b></span>
-            )}
-          </div>
-          <div className="cart-pill-body">
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <div className="cart-pill-thumbs">
-                {cartItemsPreview.slice(0, 3).map(p => (
-                  <img key={p.id} src={p.image} alt="" className="cart-pill-thumb" />
-                ))}
-              </div>
-              <div className="cart-pill-info">
-                <div className="cart-pill-items-title">{totalCartCount} {totalCartCount === 1 ? 'Item' : 'Items'} · {money(cartSubtotal)}</div>
-                {cartSavings > 0 && (
-                  <div className="cart-pill-savings">₹{Math.round(cartSavings)} saved, more coming up!</div>
-                )}
-              </div>
-            </div>
-            <button className="cart-pill-btn" onClick={openCartDrawer}>
-              Go to Cart <ChevronRight size={14} />
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -4310,6 +4153,30 @@ function AdminPage({
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/* ==========================================================================
+   DEDICATED STANDALONE ADMIN SOFTWARE LAUNCHER & REDIRECT
+   ========================================================================== */
+function AdminRedirect() {
+  useEffect(() => {
+    window.location.replace('/admin.html')
+  }, [])
+
+  return (
+    <div style={{ padding: '80px 20px', textAlign: 'center', minHeight: '60vh', display: 'grid', placeItems: 'center' }}>
+      <div style={{ background: '#fff', borderRadius: '20px', padding: '36px', maxWidth: '440px', boxShadow: 'var(--shadow-glass)', border: '1px solid var(--line)' }}>
+        <img src="/abm-logo.png" alt="Agaram" style={{ height: '46px', margin: '0 auto 14px', display: 'block' }} />
+        <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '8px' }}>Agaram Admin Software</h3>
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '20px', lineHeight: 1.5 }}>
+          Redirecting to the dedicated, standalone Admin Software portal at <code>/admin.html</code>...
+        </p>
+        <a href="/admin.html" className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px' }}>
+          Open Admin Software Portal ➔
+        </a>
+      </div>
     </div>
   )
 }

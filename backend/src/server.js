@@ -69,6 +69,10 @@ const orderSchema = z.object({
 const sessionCookieName = production ? '__Host-abm-session' : 'abm_session'
 const hashSession = token => createHash('sha256').update(token).digest('hex')
 function readSessionCookie(req) {
+  const authHeader = req.headers.authorization
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.slice(7).trim()
+  }
   const prefix = `${sessionCookieName}=`
   const value = (req.headers.cookie || '').split(';').map(part => part.trim()).find(part => part.startsWith(prefix))
   if (!value) return ''
@@ -76,12 +80,14 @@ function readSessionCookie(req) {
 }
 function setSessionCookie(res, token, maxAgeSeconds) {
   const secure = production ? '; Secure' : ''
+  const sameSite = production ? '; SameSite=None' : '; SameSite=Lax'
   res.setHeader('Cache-Control', 'no-store')
-  res.setHeader('Set-Cookie', `${sessionCookieName}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure}`)
+  res.setHeader('Set-Cookie', `${sessionCookieName}=${encodeURIComponent(token)}; Path=/; HttpOnly${sameSite}; Max-Age=${maxAgeSeconds}${secure}`)
 }
 function clearSessionCookie(res) {
   const secure = production ? '; Secure' : ''
-  res.setHeader('Set-Cookie', `${sessionCookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`)
+  const sameSite = production ? '; SameSite=None' : '; SameSite=Lax'
+  res.setHeader('Set-Cookie', `${sessionCookieName}=; Path=/; HttpOnly${sameSite}; Max-Age=0${secure}`)
 }
 async function createSession({ userId, adminEmail: email, lifetimeHours }) {
   const token = randomBytes(32).toString('base64url')
@@ -378,7 +384,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
   const session = await createSession({ userId: user.id, lifetimeHours: 12 })
   setSessionCookie(res, session.token, 12 * 60 * 60)
-  res.json({ user: { id: user.id, name: user.name, email: user.email } })
+  res.json({ token: session.token, user: { id: user.id, name: user.name, email: user.email } })
 })
 
 app.post('/api/auth/admin/login', async (req, res) => {
@@ -392,7 +398,7 @@ app.post('/api/auth/admin/login', async (req, res) => {
   if (!admin || !valid) return res.status(401).json({ error: 'Email or password is incorrect' })
   const session = await createSession({ adminEmail: admin.email, lifetimeHours: 8 })
   setSessionCookie(res, session.token, 8 * 60 * 60)
-  res.json({ email: admin.email })
+  res.json({ token: session.token, email: admin.email })
 })
 
 app.get('/api/auth/session', async (req, res, next) => {
@@ -491,6 +497,38 @@ async function loadOrders(whereSql, values) {
 }
 app.get('/api/orders', authorize('customer'), async (req, res) => res.json(await loadOrders('WHERE user_id=$1', [req.auth.sub])))
 app.get('/api/admin/orders', authorize('admin'), async (_req, res) => res.json(await loadOrders('', [])))
+
+app.patch('/api/admin/orders/:id/status', authorize('admin'), async (req, res) => {
+  const { status } = req.body || {}
+  const valid = ['received', 'confirmed', 'packed', 'shipped', 'delivered', 'cancelled']
+  if (!valid.includes(status)) return res.status(400).json({ error: 'Invalid status' })
+  const result = await pool.query('UPDATE orders SET status=$1 WHERE id=$2 RETURNING *', [status, req.params.id])
+  if (!result.rowCount) return res.status(404).json({ error: 'Order not found' })
+  res.json({ success: true, order: result.rows[0] })
+})
+
+app.get('/api/admin/users', authorize('admin'), async (_req, res) => {
+  const result = await pool.query('SELECT id, name, email, phone, email_verified_at, created_at FROM users ORDER BY created_at DESC LIMIT 200')
+  res.json(result.rows)
+})
+
+app.get('/api/admin/stats', authorize('admin'), async (_req, res) => {
+  const [prodRes, orderRes, revRes, userRes] = await Promise.all([
+    pool.query('SELECT count(*) as total, count(*) FILTER (WHERE stock <= 5) as low_stock FROM products WHERE active=TRUE'),
+    pool.query('SELECT count(*) as total, count(*) FILTER (WHERE status=\'delivered\') as delivered, count(*) FILTER (WHERE status=\'received\') as pending FROM orders'),
+    pool.query('SELECT COALESCE(sum(total), 0) as total_revenue FROM orders WHERE status != \'cancelled\''),
+    pool.query('SELECT count(*) as total FROM users')
+  ])
+  res.json({
+    products: Number(prodRes.rows[0]?.total || 0),
+    lowStock: Number(prodRes.rows[0]?.low_stock || 0),
+    orders: Number(orderRes.rows[0]?.total || 0),
+    pendingOrders: Number(orderRes.rows[0]?.pending || 0),
+    deliveredOrders: Number(orderRes.rows[0]?.delivered || 0),
+    revenue: Number(revRes.rows[0]?.total_revenue || 0),
+    customers: Number(userRes.rows[0]?.total || 0),
+  })
+})
 
 app.use((err, _req, res, _next) => {
   if (production) console.error('API request failed', { code: err?.code || 'internal' })
