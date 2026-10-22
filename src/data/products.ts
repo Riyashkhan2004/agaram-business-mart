@@ -1401,3 +1401,105 @@ export function unitPrice(product: Product, quantity: number, customerType: 'ret
   }
   return basePrice
 }
+
+export type Language = 'en' | 'ta'
+export type CustomerType = 'retail' | 'wholesale'
+
+export function getProductGallery(product: Product): string[] {
+  if (product.gallery && product.gallery.length >= 3) {
+    return product.gallery
+  }
+  const primary = product.image || 'https://images.unsplash.com/photo-1583485088034-697b5bc54ccd?w=600&auto=format&fit=crop&q=80'
+  const fallbackGallery = [
+    primary,
+    'https://images.unsplash.com/photo-1585776245991-cf89dd7fc73a?w=600&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1544816155-12df9643f363?w=600&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?w=600&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
+  ]
+  if (product.gallery && product.gallery.length > 0) {
+    const combined = [...product.gallery]
+    for (const f of fallbackGallery) {
+      if (!combined.includes(f) && combined.length < 5) combined.push(f)
+    }
+    return combined
+  }
+  return fallbackGallery
+}
+
+export const t = {
+  en: {
+    announcement: '✓ Get 10% OFF with code WHOLESALE10 | Free Express Delivery on ₹499+ | School & Office Bulk Pricing',
+    offer: 'Offer',
+    aboutUs: 'About Us',
+    helpSupport: 'Help & Support',
+    admin: 'Admin',
+    wishlist: 'Wishlist',
+    cart: 'Cart',
+    signIn: 'Sign In',
+    allStationery: 'All Stationery',
+    searchPlaceholder: 'Search aesthetic pens, mildliners, xerox papers, school combos...',
+    search: 'Search',
+    expressDelivery: '30 MIN EXPRESS DELIVERY',
+    items: 'items',
+    inCategory: 'in',
+    add: 'ADD',
+    mrp: 'MRP',
+    off: 'OFF',
+    subtotal: 'Subtotal',
+    shoppingBag: 'Shopping Bag',
+    viewCart: 'View Cart',
+    checkout: 'Checkout',
+    freeDeliveryUnlocked: '🎉 Congratulations! You unlocked FREE Express Delivery',
+    addMoreForFreeDelivery: 'Add {amount} more for FREE Delivery',
+    emptyCart: 'Your cart is empty',
+    department: 'Department',
+    categories: 'Categories',
+    otherSectors: 'Other Sectors',
+    allProducts: 'All Products',
+    myOrders: 'My Orders',
+    taxInvoice: 'TAX INVOICE',
+    printInvoice: 'Print Tax Invoice',
+    orderHistory: 'Order History',
+    noOrders: 'No orders placed yet',
+    home: 'Home',
+    signOut: 'Sign Out',
+  },
+  ta: {
+    announcement: '✓ WHOLESALE10 குறியீட்டைப் பயன்படுத்தி 10% தள்ளுபடி பெறுங்கள் | ₹499+ ஆர்டர்களுக்கு இலவச விரைவு டெலிவரி',
+    offer: 'சலுகை',
+    aboutUs: 'எங்களை பற்றி',
+    helpSupport: 'உதவி & ஆதரவு',
+    admin: 'நிர்வாகி',
+    wishlist: 'விருப்பப்பட்டியல்',
+    cart: 'கார்ட்',
+    signIn: 'உள்நுழைக',
+    allStationery: 'அனைத்து எழுதுபொருட்கள்',
+    searchPlaceholder: 'எழுதுபொருட்கள், பேனாக்கள், ஜெராக்ஸ் பேப்பர்களைத் தேடுங்கள்...',
+    search: 'தேடு',
+    expressDelivery: '30 நிமிட விரைவு டெலிவரி',
+    items: 'பொருட்கள்',
+    inCategory: 'பிரிவில்',
+    add: 'சேர்',
+    mrp: 'MRP',
+    off: 'தள்ளுபடி',
+    subtotal: 'கூட்டுத்தொகை',
+    shoppingBag: 'ஷாப்பிங் பை',
+    viewCart: 'கார்ட் பார்க்க',
+    checkout: 'ஆர்டர் செய்',
+    freeDeliveryUnlocked: '🎉 வாழ்த்துக்கள்! இலவச விரைவு டெலிவரி கிடைத்துள்ளது',
+    addMoreForFreeDelivery: 'இலவச டெலிவரிக்கு மேலும் {amount} சேர்க்கவும்',
+    emptyCart: 'உங்கள் கார்ட் காலியாக உள்ளது',
+    department: 'துறை',
+    categories: 'வகைகள்',
+    otherSectors: 'பிற துறைகள்',
+    allProducts: 'அனைத்து பொருட்கள்',
+    myOrders: 'என் ஆர்டர்கள்',
+    taxInvoice: 'வரி விலைப்பட்டியல்',
+    printInvoice: 'விலைப்பட்டியல் அச்சிடுக',
+    orderHistory: 'ஆர்டர் வரலாறு',
+    noOrders: 'ஆர்டர்கள் எதுவும் இல்லை',
+    home: 'முகப்பு',
+    signOut: 'வெளியேறு',
+  }
+}

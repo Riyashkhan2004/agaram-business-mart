@@ -475,12 +475,31 @@ body {
   .admin-layout {
     flex-direction: column;
   }
+  .admin-mobile-header {
+    display: flex !important;
+  }
   .admin-sidebar {
     width: 100%;
     height: auto;
-    position: relative;
+    position: fixed;
+    top: 50px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 55;
+    display: none;
+  }
+  .admin-sidebar.mobile-open {
+    display: flex !important;
   }
   .admin-form-row {
     grid-template-columns: 1fr;
+  }
+  .admin-topbar {
+    padding: 0 16px;
+    height: 56px;
+  }
+  .admin-page-title {
+    font-size: 15px;
   }
 }

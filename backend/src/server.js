@@ -72,6 +72,7 @@ const productSchema = z.object({
   mrp: z.number().nonnegative(),
   unit: z.string().trim().min(1).max(80).default('1 Piece'),
   image: z.string().min(1).max(2_500_000),
+  gallery: z.array(z.string().min(1).max(2_500_000)).optional(),
   badge: z.string().max(60).optional().nullable(),
   description: z.string().max(3000).default('Agaram Verified Premium Stationery'),
   stock: z.number().int().nonnegative().default(100),
@@ -457,13 +458,14 @@ app.post('/api/admin/products', authorize('admin'), async (req, res) => {
     }
     const sku = p.sku || `ABM-${p.category.slice(0, 2).toUpperCase()}-${productId}`
     const mrp = Math.max(p.mrp || 0, p.price || 0)
-    const result = await pool.query(`INSERT INTO products(id,name,category,business,brand,price,mrp,unit,image,badge,description,stock,gst,sku,active)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,TRUE)
+    const gallery = Array.isArray(p.gallery) && p.gallery.length ? p.gallery : [p.image]
+    const result = await pool.query(`INSERT INTO products(id,name,category,business,brand,price,mrp,unit,image,badge,description,stock,gst,sku,gallery,active)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,TRUE)
       ON CONFLICT(id) DO UPDATE SET
       name=EXCLUDED.name,category=EXCLUDED.category,business=EXCLUDED.business,brand=EXCLUDED.brand,price=EXCLUDED.price,mrp=EXCLUDED.mrp,
       unit=EXCLUDED.unit,image=EXCLUDED.image,badge=EXCLUDED.badge,description=EXCLUDED.description,stock=EXCLUDED.stock,gst=EXCLUDED.gst,
-      sku=EXCLUDED.sku,active=TRUE,updated_at=NOW() RETURNING *`,
-      [productId, p.name, p.category, p.business || 'stationery', p.brand || 'Agaram Select', p.price, mrp, p.unit || '1 Piece', p.image, p.badge || null, p.description || '', p.stock || 50, p.gst || 18, sku])
+      sku=EXCLUDED.sku,gallery=EXCLUDED.gallery,active=TRUE,updated_at=NOW() RETURNING *`,
+      [productId, p.name, p.category, p.business || 'stationery', p.brand || 'Agaram Select', p.price, mrp, p.unit || '1 Piece', p.image, p.badge || null, p.description || '', p.stock || 50, p.gst || 18, sku, gallery])
     res.status(201).json({ product: camelProduct(result.rows[0]) })
   } catch (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'Product SKU or ID already exists' })
@@ -480,12 +482,13 @@ app.put('/api/admin/products/:id', authorize('admin'), async (req, res) => {
   try {
     const sku = product.sku || `ABM-PR-${productId}`
     const mrp = Math.max(product.mrp || 0, product.price || 0)
-    const result = await pool.query(`INSERT INTO products(id,name,category,business,brand,price,mrp,unit,image,badge,description,stock,gst,sku,active)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,TRUE) ON CONFLICT(id) DO UPDATE SET
+    const gallery = Array.isArray(product.gallery) && product.gallery.length ? product.gallery : [product.image]
+    const result = await pool.query(`INSERT INTO products(id,name,category,business,brand,price,mrp,unit,image,badge,description,stock,gst,sku,gallery,active)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,TRUE) ON CONFLICT(id) DO UPDATE SET
       name=EXCLUDED.name,category=EXCLUDED.category,business=EXCLUDED.business,brand=EXCLUDED.brand,price=EXCLUDED.price,mrp=EXCLUDED.mrp,
       unit=EXCLUDED.unit,image=EXCLUDED.image,badge=EXCLUDED.badge,description=EXCLUDED.description,stock=EXCLUDED.stock,gst=EXCLUDED.gst,
-      sku=EXCLUDED.sku,active=TRUE,updated_at=NOW() RETURNING *`,
-      [productId, product.name, product.category, product.business || 'stationery', product.brand || 'Agaram Select', product.price, mrp, product.unit || '1 Piece', product.image, product.badge || null, product.description || '', product.stock || 0, product.gst || 18, sku])
+      sku=EXCLUDED.sku,gallery=EXCLUDED.gallery,active=TRUE,updated_at=NOW() RETURNING *`,
+      [productId, product.name, product.category, product.business || 'stationery', product.brand || 'Agaram Select', product.price, mrp, product.unit || '1 Piece', product.image, product.badge || null, product.description || '', product.stock || 0, product.gst || 18, sku, gallery])
     res.json({ product: camelProduct(result.rows[0]) })
   } catch (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'That SKU is already assigned to another product' })
@@ -588,7 +591,7 @@ async function loadOrders(whereSql, values) {
 app.get('/api/orders', async (req, res) => {
   const session = await loadSession(req)
   if (!session) return res.status(401).json({ error: 'Sign in to view your orders' })
-  res.json(await loadOrders('WHERE user_id=$1', [session.sub]))
+  res.json(await loadOrders("WHERE user_id=$1 OR (email IS NOT NULL AND email != '' AND LOWER(email)=LOWER($2))", [session.sub, session.email || '']))
 })
 
 app.get('/api/admin/orders', authorize('admin'), async (_req, res) => res.json(await loadOrders('', [])))

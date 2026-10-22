@@ -27,10 +27,11 @@ export async function migrate() {
 
 export function camelProduct(row) {
   if (!row) return null
+  const gal = Array.isArray(row.gallery) && row.gallery.length > 0 ? row.gallery : [row.image]
   return {
     id: Number(row.id), name: row.name, category: row.category, business: row.business,
     brand: row.brand, price: Number(row.price), mrp: Number(row.mrp), unit: row.unit,
-    image: row.image, ...(row.badge ? { badge: row.badge } : {}), description: row.description,
+    image: row.image, gallery: gal, ...(row.badge ? { badge: row.badge } : {}), description: row.description,
     stock: Number(row.stock), gst: Number(row.gst), sku: row.sku,
   }
 }

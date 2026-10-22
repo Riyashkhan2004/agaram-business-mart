@@ -4,6 +4,7 @@ export const API_URL = (import.meta.env.VITE_API_URL || 'https://agaram-business
 
 export type ApiOrder = {
   id: string
+  userId?: string
   date: string
   items: { productId: number; quantity: number }[]
   total: number
@@ -18,7 +19,8 @@ export type ApiOrder = {
   address: string
   city: string
   pincode: string
-  gstin: string
+  gstin?: string
+  status?: string
 }
 
 export type ApiUser = {
@@ -26,8 +28,10 @@ export type ApiUser = {
   name: string
   email: string
   phone?: string
+  role?: string
   email_verified_at?: string
-  created_at: string
+  created_at?: string
+  createdAt?: string
 }
 
 export type AdminStats = {
@@ -69,13 +73,29 @@ export const pingBackend = async (): Promise<boolean> => {
 }
 
 export const fetchProducts = async (): Promise<Product[]> => {
+  let backendProducts: Product[] = []
   try {
     const data = await request<Product[]>('/api/products')
-    if (Array.isArray(data) && data.length > 0) return data
+    if (Array.isArray(data) && data.length > 0) backendProducts = data
   } catch {
-    // Graceful fallback to rich local product catalog
+    // Graceful fallback
   }
-  return localProducts
+
+  // Read any custom products added or updated via Admin portal
+  let customProducts: Product[] = []
+  try {
+    const raw = localStorage.getItem('abm_custom_products')
+    if (raw) customProducts = JSON.parse(raw)
+  } catch {}
+
+  const baseList = backendProducts.length > 0 ? backendProducts : localProducts
+  if (!customProducts.length) return baseList
+
+  // Merge custom products: update existing or prepend new
+  const map = new Map<number, Product>()
+  for (const p of baseList) map.set(p.id, p)
+  for (const cp of customProducts) map.set(cp.id, cp)
+  return Array.from(map.values())
 }
 
 export const validateCoupon = async (code: string, total: number) => {
@@ -130,17 +150,66 @@ export const logout = async () => {
   localStorage.removeItem('abm_admin_token')
 }
 
-export const saveProduct = (product: Product) =>
-  request<{ product: Product }>(`/api/admin/products/${product.id}`, { method: 'PUT', body: JSON.stringify(product) })
+export const saveProduct = async (product: Product) => {
+  try {
+    const raw = localStorage.getItem('abm_custom_products')
+    const list: Product[] = raw ? JSON.parse(raw) : []
+    const idx = list.findIndex(p => p.id === product.id)
+    if (idx >= 0) list[idx] = product
+    else list.unshift(product)
+    localStorage.setItem('abm_custom_products', JSON.stringify(list))
+  } catch {}
+  return request<{ product: Product }>(`/api/admin/products/${product.id}`, { method: 'PUT', body: JSON.stringify(product) })
+}
 
-export const deleteProduct = (id: number) =>
-  request<{ deleted: boolean }>(`/api/admin/products/${id}`, { method: 'DELETE' })
+export const deleteProduct = async (id: number) => {
+  try {
+    const raw = localStorage.getItem('abm_custom_products')
+    if (raw) {
+      const list: Product[] = JSON.parse(raw)
+      localStorage.setItem('abm_custom_products', JSON.stringify(list.filter(p => p.id !== id)))
+    }
+  } catch {}
+  return request<{ deleted: boolean }>(`/api/admin/products/${id}`, { method: 'DELETE' })
+}
 
-export const createOrder = (order: Pick<ApiOrder, 'items' | 'customerName' | 'phone' | 'email' | 'address' | 'city' | 'pincode' | 'gstin'>) =>
+export const createOrder = (order: {
+  items: { productId: number; quantity: number }[]
+  customerName: string
+  phone: string
+  email: string
+  address: string
+  city: string
+  pincode: string
+  gstin?: string
+  userId?: string
+}) =>
   request<{ order: ApiOrder }>('/api/orders', { method: 'POST', body: JSON.stringify(order) })
 
 export const fetchOrders = () =>
   request<ApiOrder[]>('/api/orders')
+
+export const fetchUserOrders = async (userEmail?: string, userId?: string): Promise<ApiOrder[]> => {
+  try {
+    const data = await request<ApiOrder[]>('/api/orders')
+    if (Array.isArray(data) && data.length > 0) return data
+  } catch {}
+
+  // Strict user isolation: never cross-show orders between accounts (e.g. Praveen vs Spideyriyas)
+  try {
+    const raw = localStorage.getItem('abm_orders')
+    if (raw) {
+      const all: ApiOrder[] = JSON.parse(raw)
+      if (!userEmail && !userId) return []
+      return all.filter(o => {
+        const matchesEmail = userEmail && o.email && o.email.toLowerCase().trim() === userEmail.toLowerCase().trim()
+        const matchesId = userId && (o as any).userId === userId
+        return matchesEmail || matchesId
+      })
+    }
+  } catch {}
+  return []
+}
 
 export const fetchAdminOrders = () =>
   request<ApiOrder[]>('/api/admin/orders')
