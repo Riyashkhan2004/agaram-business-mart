@@ -4043,6 +4043,139 @@ html, body {
   .wholesale-light-side { top: 22px; bottom: 22px; }
   .wholesale-signboard { inset: 12px; }
 }
+
+@media (max-width: 767px) {
+  .account-page {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 14px 12px 100px !important;
+  }
+
+  .account-profile-summary {
+    align-items: stretch !important;
+    gap: 14px !important;
+    padding: 16px !important;
+    margin-bottom: 16px !important;
+    border-radius: 18px !important;
+  }
+
+  .account-profile-identity {
+    min-width: 0;
+    gap: 12px !important;
+    align-items: center !important;
+  }
+
+  .account-profile-avatar {
+    box-sizing: border-box;
+    flex: 0 0 56px;
+    width: 56px !important;
+    min-width: 56px;
+    height: 56px !important;
+    min-height: 56px;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    border-radius: 50% !important;
+  }
+
+  .account-profile-info {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .account-profile-heading {
+    align-items: flex-start !important;
+    gap: 6px !important;
+  }
+
+  .account-profile-heading h1 {
+    max-width: 100%;
+    font-size: clamp(17px, 5vw, 20px) !important;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  .account-profile-heading > span {
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .account-profile-meta,
+  .account-profile-account-id {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .account-profile-actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 8px !important;
+  }
+
+  .account-profile-actions > a,
+  .account-profile-actions > button {
+    box-sizing: border-box;
+    justify-content: center;
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px 9px !important;
+    white-space: normal;
+    font-size: 12px !important;
+  }
+
+  .account-layout-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 14px !important;
+    min-width: 0;
+  }
+
+  .account-sidebar,
+  .account-content {
+    width: 100%;
+    max-width: none !important;
+    min-width: 0;
+  }
+
+  .account-menu-card {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 10px !important;
+  }
+
+  .account-menu-list {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px !important;
+  }
+
+  .account-menu-button {
+    box-sizing: border-box;
+    min-width: 0;
+    min-height: 46px;
+    gap: 4px;
+    padding: 8px 7px !important;
+    font-size: 12px !important;
+  }
+
+  .account-menu-button > span:first-child {
+    flex: 1;
+    min-width: 0;
+    gap: 6px !important;
+    overflow-wrap: anywhere;
+  }
+
+  .account-menu-button > span:last-child {
+    flex-shrink: 0;
+    gap: 3px !important;
+  }
+
+  .account-content,
+  .account-content * {
+    max-width: 100%;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .wholesale-light-row span { animation: none; }
 }

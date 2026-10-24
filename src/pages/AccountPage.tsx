@@ -496,9 +496,10 @@ export const AccountPage: React.FC<AccountPageProps> = ({
   ]
 
   return (
-    <div className="container" style={{ padding: '24px 16px 80px', maxWidth: '1160px', margin: '0 auto' }}>
+    <div className="container account-page" style={{ padding: '24px 16px 80px', maxWidth: '1160px', margin: '0 auto' }}>
       {/* Top Profile Summary Card */}
       <div
+        className="account-profile-summary"
         style={{
           background: 'linear-gradient(135deg, #ffffff 0%, #fff1f2 100%)',
           border: '1px solid rgba(226, 232, 240, 0.9)',
@@ -513,8 +514,9 @@ export const AccountPage: React.FC<AccountPageProps> = ({
           boxShadow: '0 4px 20px -5px rgba(0,0,0,0.05)'
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+        <div className="account-profile-identity" style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
           <div
+            className="account-profile-avatar"
             style={{
               width: '56px',
               height: '56px',
@@ -530,8 +532,8 @@ export const AccountPage: React.FC<AccountPageProps> = ({
           >
             {currentUser.name?.[0]?.toUpperCase() || 'U'}
           </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <div className="account-profile-info">
+            <div className="account-profile-heading" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <h1 style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a', margin: 0 }}>
                 {currentUser.name || 'Stationery Buyer'}
               </h1>
@@ -551,16 +553,16 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                 ★ Agaram Plus Member
               </span>
             </div>
-            <div style={{ fontSize: '13px', color: '#64748b', marginTop: '3px' }}>
+            <div className="account-profile-meta" style={{ fontSize: '13px', color: '#64748b', marginTop: '3px' }}>
               {currentUser.email} {currentUser.phone ? `• +91 ${currentUser.phone}` : ''}
             </div>
-            <div style={{ fontSize: '11px', color: '#059669', fontWeight: 700, marginTop: '2px' }}>
+            <div className="account-profile-account-id" style={{ fontSize: '11px', color: '#059669', fontWeight: 700, marginTop: '2px' }}>
               Account ID: {currentUser.id || 'AGM-USR-8821'} • Isolated Profile Active
             </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div className="account-profile-actions" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <Link
             to="/"
             className="btn btn-secondary"
@@ -588,10 +590,11 @@ export const AccountPage: React.FC<AccountPageProps> = ({
       </div>
 
       {/* Main Grid: Sidebar Tabs + Content Area */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '24px' }}>
+      <div className="account-layout-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '24px' }}>
         {/* Desktop / Mobile Navigation Sidebar */}
-        <div style={{ maxWidth: '300px', width: '100%' }}>
+        <div className="account-sidebar" style={{ maxWidth: '300px', width: '100%' }}>
           <div
+            className="account-menu-card"
             style={{
               background: '#fff',
               border: '1px solid #e2e8f0',
@@ -603,13 +606,14 @@ export const AccountPage: React.FC<AccountPageProps> = ({
             <div style={{ padding: '8px 12px 12px', fontSize: '11px', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.05em' }}>
               ACCOUNT MENU
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div className="account-menu-list" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               {navItems.map(item => {
                 const isActive = currentTab === item.key
                 return (
                   <button
                     key={item.key}
                     onClick={() => setTab(item.key)}
+                    className="account-menu-button"
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -656,7 +660,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
         </div>
 
         {/* Content Area */}
-        <div style={{ minWidth: 0, flex: 1 }}>
+        <div className="account-content" style={{ minWidth: 0, flex: 1 }}>
           {/* TAB: ORDERS */}
           {currentTab === 'orders' && (
             <div>
