@@ -30,6 +30,7 @@ import { loadSavedAddresses, saveUserAddresses, type SavedAddress } from '../uti
 interface AccountPageProps {
   currentUser: { id?: string; name?: string; email?: string; phone?: string } | null
   setCurrentUser: (u: { id?: string; name?: string; email?: string; phone?: string } | null) => void
+  coinBalance?: number
   lang?: Language
   onOpenTracking?: (orderId: string, address: string) => void
   products: Product[]
@@ -55,6 +56,7 @@ type TabKey =
 export const AccountPage: React.FC<AccountPageProps> = ({
   currentUser,
   setCurrentUser,
+  coinBalance = 50,
   lang = 'en',
   onOpenTracking,
   products,
@@ -484,7 +486,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
     { key: 'orders', label: 'Orders', icon: <Package size={17} />, badge: orders.length > 0 ? `${orders.length}` : undefined },
     { key: 'profile', label: 'My Profile', icon: <User size={17} /> },
     { key: 'coupons', label: 'Coupons', icon: <Tag size={17} />, badge: '4 New' },
-    { key: 'supercoin', label: 'SuperCoin Zone', icon: <Coins size={17} />, badge: '120' },
+    { key: 'supercoin', label: 'SuperCoin Zone', icon: <Coins size={17} />, badge: `${coinBalance}` },
     { key: 'plus', label: 'Agaram Plus Zone', icon: <ShieldCheck size={17} />, badge: 'VIP' },
     { key: 'wallet', label: 'Saved Cards & Wallet', icon: <CreditCard size={17} /> },
     { key: 'addresses', label: 'Saved Addresses', icon: <MapPin size={17} /> },
@@ -1053,7 +1055,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                 <div>
                   <div style={{ fontSize: '12px', fontWeight: 700, opacity: 0.9 }}>Available SuperCoin Balance</div>
                   <div style={{ fontSize: '36px', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    🪙 120 <span style={{ fontSize: '16px', fontWeight: 600 }}>(Worth ₹120)</span>
+                    🪙 {coinBalance} <span style={{ fontSize: '16px', fontWeight: 600 }}>(Worth ₹{coinBalance})</span>
                   </div>
                 </div>
                 <button

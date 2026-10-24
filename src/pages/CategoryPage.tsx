@@ -91,15 +91,7 @@ export function CategoryPage({
           <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a', marginBottom: '10px' }}>
             Filter by Sub-Category:
           </div>
-          <div
-            style={{
-              display: 'flex',
-              gap: '12px',
-              overflowX: 'auto',
-              paddingBottom: '8px',
-              scrollbarWidth: 'none',
-            }}
-          >
+          <div className="category-subcategory-grid" role="group" aria-label="Filter products by sub-category">
             {currentCategory.subcategories.map(sub => {
               const isActive = selectedSub === sub.id
               return (
@@ -107,6 +99,8 @@ export function CategoryPage({
                   key={sub.id}
                   type="button"
                   onClick={() => setSelectedSub(sub.id)}
+                  aria-pressed={isActive}
+                  aria-label={`Show ${sub.name} products`}
                   style={{
                     display: 'flex',
                     flexDirection: 'column',
@@ -115,9 +109,10 @@ export function CategoryPage({
                     background: 'transparent',
                     border: 'none',
                     cursor: 'pointer',
-                    flexShrink: 0,
-                    width: '76px',
+                    width: '100%',
+                    maxWidth: '90px',
                     textAlign: 'center',
+                    justifySelf: 'center',
                   }}
                 >
                   <div

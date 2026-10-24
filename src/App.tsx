@@ -162,6 +162,11 @@ export function ProductGridSkeleton({ count = 6 }: { count?: number }) {
   )
 }
 
+function notifyCoinBalanceChanged() {
+  localStorage.setItem('abm_coins_refresh', String(Date.now()))
+  window.dispatchEvent(new Event('abm_coins_updated'))
+}
+
 export default function App() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -195,6 +200,7 @@ export default function App() {
   const [userPincode, setUserPincode] = useState(() => readStorage('abm_pincode', '600001'))
   const [pincodeModalOpen, setPincodeModalOpen] = useState(false)
   const [currentUser, setCurrentUser] = useState<{ id?: string; name?: string; email?: string } | null>(null)
+  const [coinBalance, setCoinBalance] = useState(50)
   const [locationOwnerId, setLocationOwnerId] = useState<string | null>(null)
   const [mapPickerOpen, setMapPickerOpen] = useState(false)
   const [trackingModalOpen, setTrackingModalOpen] = useState(false)
@@ -213,6 +219,45 @@ export default function App() {
     pincode: '607001',
     label: 'Home'
   }))
+
+  useEffect(() => {
+    let active = true
+    const refreshCoinBalance = async () => {
+      if (!currentUser?.id) {
+        if (active) setCoinBalance(50)
+        return
+      }
+
+      const localOrders = readStorage<ApiOrder[]>('abm_orders', [])
+        .filter(order => order.userId === currentUser.id)
+      try {
+        const serverOrders = await fetchUserOrders(currentUser.email, currentUser.id)
+        const ordersById = new Map<string, ApiOrder>()
+        for (const order of localOrders) ordersById.set(order.id, order)
+        for (const order of serverOrders) ordersById.set(order.id, order)
+        const earned = [...ordersById.values()].reduce((sum, order) => sum + Math.max(0, Number(order.coinsEarned) || 0), 0)
+        if (active) setCoinBalance(50 + earned)
+      } catch {
+        const earned = localOrders.reduce((sum, order) => sum + Math.max(0, Number(order.coinsEarned) || 0), 0)
+        if (active) setCoinBalance(50 + earned)
+      }
+    }
+
+    void refreshCoinBalance()
+    const refresh = () => void refreshCoinBalance()
+    const poll = window.setInterval(refresh, 15_000)
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === 'abm_coins_refresh') refresh()
+    }
+    window.addEventListener('abm_coins_updated', refresh)
+    window.addEventListener('storage', onStorage)
+    return () => {
+      active = false
+      window.clearInterval(poll)
+      window.removeEventListener('abm_coins_updated', refresh)
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [currentUser?.id, currentUser?.email])
 
   useEffect(() => {
     if (currentUser?.id) {
@@ -375,10 +420,17 @@ export default function App() {
             </button>
 
             <div className="instamart-top-right">
-              <div className="instamart-coins-pill" title="Agaram Reward Coins">
+              <button
+                type="button"
+                className="instamart-coins-pill"
+                title="Agaram Reward Coins"
+                aria-label={`${coinBalance} Agaram reward coins. Open your coin balance.`}
+                onClick={() => navigate('/account?tab=supercoin')}
+                style={{ cursor: 'pointer', fontFamily: 'inherit' }}
+              >
                 <span style={{ fontSize: '13px' }}>🪙</span>
-                <span>50</span>
-              </div>
+                <span>{coinBalance}</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setLang(l => l === 'en' ? 'ta' : 'en')}
@@ -489,21 +541,23 @@ export default function App() {
       </header>
 
       {/* 3. CATEGORY NAVIGATION STRIP */}
-      <div className="category-rail">
-        <div className="container category-rail-inner">
-          <Link to="/" className="category-pill active">
-            <span className="category-pill-icon">✨</span>
-            <span>{t[lang].allStationery}</span>
-          </Link>
-          {storeCategories.map(cat => (
-            <Link key={cat.slug} to={`/category/${cat.slug}`} className="category-pill">
-              <span className="category-pill-icon">{cat.icon}</span>
-              <span>{lang === 'ta' ? cat.nameTa : cat.name}</span>
-              {cat.badge && <span className="category-pill-badge">{cat.badge}</span>}
+      {!location.pathname.startsWith('/category/') && (
+        <div className="category-rail">
+          <div className="container category-rail-inner">
+            <Link to="/" className="category-pill active">
+              <span className="category-pill-icon">✨</span>
+              <span>{t[lang].allStationery}</span>
             </Link>
-          ))}
+            {storeCategories.map(cat => (
+              <Link key={cat.slug} to={`/category/${cat.slug}`} className="category-pill">
+                <span className="category-pill-icon">{cat.icon}</span>
+                <span>{lang === 'ta' ? cat.nameTa : cat.name}</span>
+                {cat.badge && <span className="category-pill-badge">{cat.badge}</span>}
+              </Link>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 4. MAIN ROUTER CONTENT */}
       <main>
@@ -607,6 +661,7 @@ export default function App() {
             <AccountProfilePage
               currentUser={currentUser}
               setCurrentUser={setCurrentUser}
+              coinBalance={coinBalance}
               lang={lang}
               products={products}
               cart={cart}
@@ -2497,6 +2552,7 @@ function CheckoutPage({
       const res = await createOrder({ ...orderData, userId: currentUser?.id })
       const existing = readStorage<ApiOrder[]>('abm_orders', [])
       localStorage.setItem('abm_orders', JSON.stringify([res.order, ...existing]))
+      notifyCoinBalanceChanged()
       clearCart()
       navigate(`/invoice/${res.order.id}`)
     } catch {
@@ -2523,6 +2579,7 @@ function CheckoutPage({
       }
       const existing = readStorage<ApiOrder[]>('abm_orders', [])
       localStorage.setItem('abm_orders', JSON.stringify([localOrder, ...existing]))
+      notifyCoinBalanceChanged()
       clearCart()
       navigate(`/invoice/${localId}`)
     } finally {

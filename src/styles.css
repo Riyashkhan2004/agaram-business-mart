@@ -3377,6 +3377,26 @@ html, body {
   display: none;
 }
 
+.category-subcategory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  align-items: start;
+  gap: 12px;
+  max-width: 760px;
+}
+
+.instamart-coins-pill:focus-visible {
+  outline: 3px solid #f59e0b;
+  outline-offset: 2px;
+}
+
+@media (max-width: 480px) {
+  .category-subcategory-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px 4px;
+  }
+}
+
 @media (max-width: 767px) {
   .top-bar {
     display: none !important;
