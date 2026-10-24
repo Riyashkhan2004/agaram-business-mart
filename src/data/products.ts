@@ -197,7 +197,7 @@ export const categories: StationeryCategory[] = [
     name: 'Washi Tapes & Sticky Notes',
     nameTa: 'ஒட்டும் குறிப்புகள் & டேப்புகள்',
     icon: '📑',
-    image: 'https://images.unsplash.com/photo-1586075010923-2dd4570fb338?auto=format&fit=crop&w=300&q=80',
+    image: 'https://images.unsplash.com/photo-1553044020-8c90843adf96?q=80&w=1470&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=NHwxMjA3fDA%3D',
     tagline: 'Morandi memos, clear translucent sticky notes & gold foiled washi rolls',
     badge: 'Cute',
     subcategories: [
