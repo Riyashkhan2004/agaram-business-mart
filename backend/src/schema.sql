@@ -87,6 +87,24 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS gallery JSONB NOT NULL DEFAULT '[]
 ALTER TABLE products ADD COLUMN IF NOT EXISTS tiers JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS subcategory VARCHAR(100);
 
+-- Older deployments stored galleries as PostgreSQL text arrays. Product writes
+-- now send JSON, so convert the existing values instead of leaving the legacy
+-- column type in place when ADD COLUMN IF NOT EXISTS is a no-op.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = 'products'
+      AND column_name = 'gallery'
+      AND udt_name = '_text'
+  ) THEN
+    ALTER TABLE products ALTER COLUMN gallery DROP DEFAULT;
+    ALTER TABLE products ALTER COLUMN gallery TYPE JSONB USING to_jsonb(gallery);
+    ALTER TABLE products ALTER COLUMN gallery SET DEFAULT '[]'::jsonb;
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS storefront_categories (
   slug VARCHAR(80) PRIMARY KEY,
   name VARCHAR(120) NOT NULL,
