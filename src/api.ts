@@ -61,7 +61,16 @@ async function request<T>(route: string, options: RequestInit = {}): Promise<T> 
     headers,
   })
   const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`)
+  if (!response.ok) {
+    const fieldErrors = body.details?.fieldErrors as Record<string, string[]> | undefined
+    const formErrors = body.details?.formErrors as string[] | undefined
+    const validationMessages = [
+      ...(formErrors || []),
+      ...Object.entries(fieldErrors || {}).flatMap(([field, messages]) => messages.map(message => `${field}: ${message}`)),
+    ]
+    const detail = validationMessages.length ? ` — ${validationMessages.join('; ')}` : ''
+    throw new Error(`${body.error || `Request failed (${response.status})`}${detail}`)
+  }
   return body as T
 }
 

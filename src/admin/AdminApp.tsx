@@ -235,26 +235,54 @@ export function AdminApp() {
 
   // Handle Save / Add Product (Optimistic + Neon DB)
   const handleSaveProduct = async (p: Product, isCreate = false) => {
-    const multiGallery = p.gallery && p.gallery.length > 0 ? p.gallery : getProductGallery(p)
+    const price = Math.max(0, Number.isFinite(Number(p.price)) ? Number(p.price) : 0)
+    const mrp = Math.max(price, Number.isFinite(Number(p.mrp)) ? Number(p.mrp) : price)
+    const stock = Math.max(0, Math.floor(Number.isFinite(Number(p.stock)) ? Number(p.stock) : 0))
+    const gst = Math.min(100, Math.max(0, Number.isFinite(Number(p.gst)) ? Number(p.gst) : 18))
+    const multiGallery = [...new Set((p.gallery?.length ? p.gallery : getProductGallery(p)).filter(image => typeof image === 'string' && image.trim()))].slice(0, 5)
+    const discountFor = (tierPrice: number) => mrp > 0
+      ? Math.min(100, Math.max(0, Math.round(((mrp - tierPrice) / mrp) * 100)))
+      : 0
+    const defaultTiers = [
+      { minQty: 1, maxQty: 2, label: '1–2 units', price, discountPct: discountFor(price) },
+      { minQty: 3, maxQty: 5, label: '3–5 units', price: Math.round(price * 0.92), discountPct: discountFor(Math.round(price * 0.92)) },
+      { minQty: 6, label: '6+ units', price: Math.round(price * 0.84), discountPct: discountFor(Math.round(price * 0.84)) },
+    ]
+    const cleanTiers = p.tiers?.length
+      ? p.tiers
+        .filter(tier => Number.isFinite(Number(tier.minQty)) && Number(tier.minQty) > 0 && Number.isFinite(Number(tier.price)) && Number(tier.price) >= 0)
+        .slice(0, 10)
+        .map(tier => {
+          const minQty = Math.max(1, Math.floor(Number(tier.minQty)))
+          const maxQty = tier.maxQty == null ? undefined : Math.floor(Number(tier.maxQty))
+          return {
+            ...tier,
+            minQty,
+            ...(maxQty == null || maxQty < minQty ? {} : { maxQty }),
+            price: Number(tier.price),
+            discountPct: Math.min(100, Math.max(0, Number.isFinite(Number(tier.discountPct)) ? Number(tier.discountPct) : 0)),
+            label: String(tier.label || `${minQty}+ units`).slice(0, 80),
+          }
+        })
+      : []
+    const tiers = cleanTiers.length ? cleanTiers : defaultTiers
 
     const safeProduct: Product = {
       ...p,
-      business: p.business || 'stationery',
-      mrp: Math.max(Number(p.mrp) || 0, Number(p.price) || 0),
-      price: Number(p.price) || 0,
-      stock: Number(p.stock) || 0,
-      gst: Number(p.gst) || 18,
-      unit: p.unit || '1 Piece',
-      brand: p.brand || 'Agaram Select',
-      description: p.description || 'Agaram Verified Premium Stationery',
-      sku: p.sku || `ABM-${p.category?.slice(0, 2).toUpperCase()}-${p.id}`,
-      image: p.image || multiGallery[0],
+      business: p.business === 'cctv' || p.business === 'furniture' ? p.business : 'stationery',
+      mrp,
+      price,
+      stock,
+      gst,
+      name: String(p.name || '').trim().slice(0, 180),
+      category: String(p.category || 'stationery').trim().slice(0, 80),
+      unit: String(p.unit || '1 Piece').trim().slice(0, 80) || '1 Piece',
+      brand: String(p.brand || 'Agaram Select').trim().slice(0, 100) || 'Agaram Select',
+      description: String(p.description || 'Agaram Verified Premium Stationery').slice(0, 3000),
+      sku: String(p.sku || '').trim().slice(0, 80) || `ABM-${p.category?.slice(0, 2).toUpperCase()}-${p.id || 'NEW'}`,
+      image: p.image || multiGallery[0] || '',
       gallery: multiGallery,
-      tiers: p.tiers?.length ? p.tiers : [
-        { minQty: 1, maxQty: 2, label: '1–2 units', price: Number(p.price) || 0, discountPct: Math.round((((Number(p.mrp) || Number(p.price) || 0) - (Number(p.price) || 0)) / (Number(p.mrp) || 1)) * 100) },
-        { minQty: 3, maxQty: 5, label: '3–5 units', price: Math.round((Number(p.price) || 0) * 0.92), discountPct: Math.round((((Number(p.mrp) || Number(p.price) || 0) - (Number(p.price) || 0) * 0.92) / (Number(p.mrp) || 1)) * 100) },
-        { minQty: 6, label: '6+ units', price: Math.round((Number(p.price) || 0) * 0.84), discountPct: Math.round((((Number(p.mrp) || Number(p.price) || 0) - (Number(p.price) || 0) * 0.84) / (Number(p.mrp) || 1)) * 100) },
-      ]
+      tiers,
     }
 
     try {
