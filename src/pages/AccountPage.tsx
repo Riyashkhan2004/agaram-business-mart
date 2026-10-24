@@ -21,9 +21,10 @@ import {
   CheckCircle2,
   AlertCircle,
   Copy,
-  Check
+  Check,
+  X
 } from 'lucide-react'
-import { fetchUserOrders, fetchUserAddresses, saveUserAddressesRemote, customerLogin, signUp, logout, ApiOrder } from '../api'
+import { fetchUserOrders, fetchUserAddresses, saveUserAddressesRemote, customerLogin, signUp, logout, cancelCustomerOrder, ApiOrder } from '../api'
 import { Product, Language, t, money, unitPrice, CustomerType } from '../data/products'
 import { loadSavedAddresses, saveUserAddresses, type SavedAddress } from '../utils/savedAddresses'
 
@@ -83,6 +84,8 @@ export const AccountPage: React.FC<AccountPageProps> = ({
   // Orders state - strictly isolated per user!
   const [orders, setOrders] = useState<ApiOrder[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
+  const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null)
+  const [cancelOrderError, setCancelOrderError] = useState<{ id: string; message: string } | null>(null)
 
   // Saved addresses
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>(() => loadSavedAddresses(currentUser?.id).addresses)
@@ -119,6 +122,20 @@ export const AccountPage: React.FC<AccountPageProps> = ({
       })
     return () => { cancelled = true }
   }, [currentUser])
+
+  const handleCancelOrder = async (order: ApiOrder) => {
+    if (!window.confirm(`Cancel order #${order.id}? The items will be returned to stock.`)) return
+    setCancellingOrderId(order.id)
+    setCancelOrderError(null)
+    try {
+      await cancelCustomerOrder(order.id)
+      setOrders(previous => previous.map(item => item.id === order.id ? { ...item, status: 'cancelled' } : item))
+    } catch (error) {
+      setCancelOrderError({ id: order.id, message: error instanceof Error ? error.message : 'Could not cancel this order. Please try again.' })
+    } finally {
+      setCancellingOrderId(null)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -717,6 +734,15 @@ export const AccountPage: React.FC<AccountPageProps> = ({
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   {orders.map(order => (
+                    (() => {
+                      const status = String(order.status || 'received').toLowerCase()
+                      const canCancel = ['received', 'confirmed', 'packed'].includes(status)
+                      const statusStyle = status === 'cancelled'
+                        ? { background: '#fef2f2', color: '#b91c1c' }
+                        : status === 'delivered'
+                          ? { background: '#ecfdf5', color: '#059669' }
+                          : { background: '#eff6ff', color: '#1d4ed8' }
+                      return (
                     <div
                       key={order.id}
                       style={{
@@ -748,13 +774,12 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                               style={{
                                 fontSize: '10.5px',
                                 fontWeight: 800,
-                                background: '#ecfdf5',
-                                color: '#059669',
+                                ...statusStyle,
                                 padding: '2px 8px',
                                 borderRadius: '6px'
                               }}
                             >
-                              ✓ Confirmed
+                              {status === 'cancelled' ? 'Cancelled' : status.charAt(0).toUpperCase() + status.slice(1)}
                             </span>
                           </div>
                           <div style={{ fontSize: '11.5px', color: '#64748b', marginTop: '2px' }}>
@@ -829,11 +854,23 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                           borderTop: '1px solid #f1f5f9'
                         }}
                       >
+                        {cancelOrderError?.id === order.id && <div role="alert" style={{ width: '100%', color: '#b91c1c', fontSize: '12px' }}>{cancelOrderError.message}</div>}
                         <div style={{ fontSize: '11.5px', color: '#64748b' }}>
                           Deliver to: <b>{order.customerName || currentUser.name}</b>, {order.city || 'Cuddalore'} ({order.pincode || '607001'})
                         </div>
 
                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          {canCancel && (
+                            <button
+                              type="button"
+                              disabled={cancellingOrderId === order.id}
+                              onClick={() => handleCancelOrder(order)}
+                              className="btn btn-secondary"
+                              style={{ fontSize: '11.5px', padding: '7px 12px', display: 'inline-flex', alignItems: 'center', gap: '5px', color: '#b91c1c', borderColor: '#fecaca', minHeight: '38px' }}
+                            >
+                              <X size={14} /> {cancellingOrderId === order.id ? 'Cancelling…' : 'Cancel order'}
+                            </button>
+                          )}
                           {onOpenTracking && (
                             <button
                               onClick={() => onOpenTracking(order.id, `${order.address || 'Cuddalore'} - ${order.pincode || '607001'}`)}
@@ -869,6 +906,8 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                         </div>
                       </div>
                     </div>
+                      )
+                    })()
                   ))}
                 </div>
               )}

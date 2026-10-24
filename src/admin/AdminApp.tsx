@@ -23,6 +23,8 @@ import {
   Check,
   ChevronDown,
   Upload,
+  FileSpreadsheet,
+  Download,
   Image as ImageIcon,
   Menu,
   Layers,
@@ -53,6 +55,7 @@ import {
 } from '../api'
 import { categories as defaultCategories, mergeStoreCategories, brands, money, type Product, type CategorySlug, type StationeryCategory, getProductGallery, getProductTiers } from '../data/products'
 import { StorefrontCategories } from './StorefrontCategories'
+import { downloadProductSpreadsheetTemplate, parseProductSpreadsheet, type SpreadsheetProduct } from './productSpreadsheet'
 
 type AdminTab = 'dashboard' | 'products' | 'storefront' | 'orders' | 'customers' | 'database'
 
@@ -91,6 +94,12 @@ export function AdminApp() {
   // File Upload input refs
   const addFileInputRef = useRef<HTMLInputElement>(null)
   const editFileInputRef = useRef<HTMLInputElement>(null)
+  const excelFileInputRef = useRef<HTMLInputElement>(null)
+  const [excelProducts, setExcelProducts] = useState<SpreadsheetProduct[]>([])
+  const [excelErrors, setExcelErrors] = useState<string[]>([])
+  const [excelReading, setExcelReading] = useState(false)
+  const [excelSaving, setExcelSaving] = useState(false)
+  const [excelProgress, setExcelProgress] = useState(0)
 
   // New Product Form State
   const [newProduct, setNewProduct] = useState<Partial<Product>>({
@@ -301,6 +310,73 @@ export function AdminApp() {
     } catch (err: any) {
       setStatusMessage(`Could not save product: ${err.message || 'Please check your connection and try again.'}`)
     }
+  }
+
+  const handleReadProductSpreadsheet = async (file: File | undefined) => {
+    if (!file) return
+    setExcelReading(true)
+    setExcelErrors([])
+    setExcelProducts([])
+    try {
+      const parsed = await parseProductSpreadsheet(file, storeCategories, newProduct.category || 'xerox-printing')
+      const seen = new Set<string>()
+      const duplicateErrors: string[] = []
+      const unique = parsed.products.filter(product => {
+        const sku = product.sku.trim().toLowerCase()
+        if (seen.has(sku)) { duplicateErrors.push(`SKU ${product.sku} appears more than once in the file.`); return false }
+        seen.add(sku)
+        return true
+      })
+      setExcelProducts(unique)
+      setExcelErrors([...parsed.errors, ...duplicateErrors])
+      if (!unique.length && !parsed.errors.length) setExcelErrors(['No product rows were found in the spreadsheet.'])
+    } catch (error) {
+      setExcelErrors([error instanceof Error ? error.message : 'Could not read that spreadsheet.'])
+    } finally {
+      setExcelReading(false)
+    }
+  }
+
+  const resetSpreadsheetImport = () => {
+    setExcelProducts([])
+    setExcelErrors([])
+    setExcelProgress(0)
+    if (excelFileInputRef.current) excelFileInputRef.current.value = ''
+  }
+
+  const handleImportSpreadsheetProducts = async () => {
+    if (!excelProducts.length || excelSaving) return
+    setExcelSaving(true)
+    setExcelProgress(0)
+    const created: Product[] = []
+    const failures: string[] = [...excelErrors]
+    const failedProducts: SpreadsheetProduct[] = []
+    for (let index = 0; index < excelProducts.length; index += 1) {
+      const product = excelProducts[index]
+      try {
+        const response = await createProduct(product)
+        created.push(response.product)
+      } catch (error) {
+        failedProducts.push(product)
+        failures.push(`${product.sku}: ${error instanceof Error ? error.message : 'Could not save this product.'}`)
+      }
+      setExcelProgress(index + 1)
+    }
+    if (created.length) {
+      setProducts(previous => [...created, ...previous.filter(item => !created.some(saved => saved.id === item.id))])
+      window.dispatchEvent(new CustomEvent('abm_products_updated'))
+      localStorage.setItem('abm_products_refresh', String(Date.now()))
+      void refreshAllData()
+      setStatusMessage(`${created.length} product${created.length === 1 ? '' : 's'} added from the spreadsheet.`)
+      window.setTimeout(() => setStatusMessage(''), 5000)
+    }
+    setExcelProducts(failedProducts)
+    setExcelErrors(failures)
+    if (!failedProducts.length && !failures.length) {
+      setIsAddingProduct(false)
+      resetSpreadsheetImport()
+    }
+    setExcelSaving(false)
   }
 
   // Handle Quick Inline Stock Adjust
@@ -1184,11 +1260,11 @@ export function AdminApp() {
 
       {/* MODAL 1: ADD / CREATE PRODUCT (WITH LOCAL DEVICE UPLOAD & MULTI-ANGLE GALLERY) */}
       {isAddingProduct && (
-        <div className="admin-modal-backdrop" onClick={() => setIsAddingProduct(false)}>
+        <div className="admin-modal-backdrop" onClick={() => { if (!excelSaving) { setIsAddingProduct(false); resetSpreadsheetImport() } }}>
           <div className="admin-modal" style={{ maxWidth: '640px' }} onClick={e => e.stopPropagation()}>
             <div className="admin-modal-header">
               <h3 style={{ fontSize: '16px', fontWeight: 800 }}>Add product to the live catalogue</h3>
-              <button onClick={() => setIsAddingProduct(false)} style={{ background: 'none', border: 'none', color: 'var(--admin-text-soft)', cursor: 'pointer' }}>
+              <button onClick={() => { if (!excelSaving) { setIsAddingProduct(false); resetSpreadsheetImport() } }} style={{ background: 'none', border: 'none', color: 'var(--admin-text-soft)', cursor: 'pointer' }}>
                 <X size={20} />
               </button>
             </div>
@@ -1199,6 +1275,20 @@ export function AdminApp() {
               }}
             >
               <div className="admin-modal-body">
+                <section style={{ padding: '14px', marginBottom: '16px', border: '1px solid var(--admin-border)', borderRadius: '12px', background: 'var(--admin-bg)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+                    <div>
+                      <strong style={{ display: 'flex', gap: '7px', alignItems: 'center', fontSize: '13px' }}><FileSpreadsheet size={16} /> Add products from Excel</strong>
+                      <p style={{ margin: '5px 0 0', color: 'var(--admin-text-soft)', fontSize: '11px' }}>Upload .xlsx or .csv. Review the rows before adding them to the live catalogue.</p>
+                    </div>
+                    <button type="button" onClick={downloadProductSpreadsheetTemplate} className="admin-btn admin-btn-secondary" style={{ minHeight: '38px', fontSize: '11px' }}><Download size={14} /> Download template</button>
+                  </div>
+                  <input ref={excelFileInputRef} type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden onChange={e => handleReadProductSpreadsheet(e.target.files?.[0])} />
+                  <button type="button" disabled={excelReading || excelSaving} onClick={() => excelFileInputRef.current?.click()} className="admin-btn admin-btn-secondary" style={{ marginTop: '12px', minHeight: '40px' }}><Upload size={14} /> {excelReading ? 'Reading spreadsheet…' : 'Choose Excel or CSV file'}</button>
+                  {excelProducts.length > 0 && <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--admin-text)' }}>{excelProducts.length} valid product rows ready{excelSaving ? ` · Saving ${excelProgress} of ${excelProducts.length}` : ''}</div>}
+                  {excelErrors.length > 0 && <div role="alert" style={{ marginTop: '9px', color: '#b42318', fontSize: '11px', maxHeight: '120px', overflow: 'auto' }}>{excelErrors.map((error, index) => <div key={`${index}-${error}`}>{error}</div>)}</div>}
+                  {excelProducts.length > 0 && <button type="button" disabled={excelSaving} onClick={handleImportSpreadsheetProducts} className="admin-btn admin-btn-primary" style={{ marginTop: '10px', minHeight: '40px' }}>{excelSaving ? `Adding ${excelProgress}/${excelProducts.length}…` : `Add ${excelProducts.length} products`}</button>}
+                </section>
                 <div className="admin-form-group">
                     <label>SKU (Stock Keeping Unit)</label>
                     <input

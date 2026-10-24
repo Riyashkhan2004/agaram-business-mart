@@ -676,15 +676,80 @@ app.get('/api/orders', authorize('customer'), async (req, res) => {
   res.json(await loadOrders('WHERE user_id=$1', [req.auth.sub]))
 })
 
+async function cancelOrder(orderKey, ownerId) {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const values = ownerId ? [orderKey, ownerId] : [orderKey]
+    const ownerClause = ownerId ? ' AND user_id=$2' : ''
+    const orderResult = await client.query(`SELECT id,status FROM orders WHERE (order_no=$1 OR id::text=$1)${ownerClause} FOR UPDATE`, values)
+    if (!orderResult.rowCount) {
+      const error = new Error('Order not found')
+      error.status = 404
+      throw error
+    }
+    const order = orderResult.rows[0]
+    if (order.status === 'cancelled') {
+      await client.query('COMMIT')
+      return { success: true, status: 'cancelled' }
+    }
+    if (!['received', 'confirmed', 'packed'].includes(order.status)) {
+      const error = new Error('This order can no longer be cancelled. Please contact support.')
+      error.status = 409
+      throw error
+    }
+    await client.query(`UPDATE products p SET stock=p.stock+oi.quantity,updated_at=NOW()
+      FROM order_items oi WHERE oi.order_id=$1 AND oi.product_id=p.id`, [order.id])
+    await client.query("UPDATE orders SET status='cancelled' WHERE id=$1", [order.id])
+    await client.query('COMMIT')
+    return { success: true, status: 'cancelled' }
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw error
+  } finally { client.release() }
+}
+
+app.patch('/api/orders/:id/cancel', authorize('customer'), async (req, res) => {
+  try {
+    res.json(await cancelOrder(req.params.id, req.auth.sub))
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Could not cancel this order' })
+  }
+})
+
 app.get('/api/admin/orders', authorize('admin'), async (_req, res) => res.json(await loadOrders('', [])))
 
 app.patch('/api/admin/orders/:id/status', authorize('admin'), async (req, res) => {
   const { status } = req.body || {}
   const valid = ['received', 'confirmed', 'packed', 'shipped', 'delivered', 'cancelled']
   if (!valid.includes(status)) return res.status(400).json({ error: 'Invalid status' })
-  const result = await pool.query('UPDATE orders SET status=$1 WHERE order_no=$2 OR id::text=$2 RETURNING *', [status, req.params.id])
-  if (!result.rowCount) return res.status(404).json({ error: 'Order not found' })
-  res.json({ success: true, order: result.rows[0] })
+  if (status === 'cancelled') {
+    try {
+      const result = await cancelOrder(req.params.id, null)
+      return res.json({ ...result, order: { status: result.status } })
+    } catch (error) {
+      return res.status(error.status || 500).json({ error: error.status ? error.message : 'Could not cancel this order' })
+    }
+  }
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const existing = await client.query('SELECT id,status FROM orders WHERE order_no=$1 OR id::text=$1 FOR UPDATE', [req.params.id])
+    if (!existing.rowCount) {
+      await client.query('ROLLBACK')
+      return res.status(404).json({ error: 'Order not found' })
+    }
+    if (existing.rows[0].status === 'cancelled') {
+      await client.query('ROLLBACK')
+      return res.status(409).json({ error: 'A cancelled order cannot be reopened.' })
+    }
+    const result = await client.query('UPDATE orders SET status=$1 WHERE id=$2 RETURNING *', [status, existing.rows[0].id])
+    await client.query('COMMIT')
+    return res.json({ success: true, order: result.rows[0] })
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw error
+  } finally { client.release() }
 })
 
 app.delete('/api/admin/orders/:id', authorize('admin'), async (req, res) => {

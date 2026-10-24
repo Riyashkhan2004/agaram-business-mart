@@ -196,6 +196,9 @@ export const fetchUserOrders = async (_userEmail?: string, userId?: string): Pro
   return request<ApiOrder[]>('/api/orders')
 }
 
+export const cancelCustomerOrder = (orderId: string) =>
+  request<{ success: boolean; status: string }>(`/api/orders/${encodeURIComponent(orderId)}/cancel`, { method: 'PATCH' })
+
 export const fetchAdminOrders = () =>
   request<ApiOrder[]>('/api/admin/orders')
 
