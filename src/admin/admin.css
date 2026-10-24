@@ -246,6 +246,7 @@ body {
 .admin-content {
   padding: 28px;
   flex: 1;
+  min-width: 0;
 }
 
 /* KPI Stat Cards */
@@ -338,6 +339,7 @@ body {
 
 .admin-table {
   width: 100%;
+  min-width: 820px;
   border-collapse: collapse;
   text-align: left;
   font-size: 13px;
@@ -497,9 +499,31 @@ body {
   }
   .admin-topbar {
     padding: 0 16px;
-    height: 56px;
+    min-height: 56px;
+    height: auto;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 8px;
+    padding-bottom: 8px;
   }
+  .admin-topbar-actions { flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+  .admin-content { padding: 16px; }
+  .admin-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .admin-stat-card { padding: 14px; }
+  .admin-table-header { align-items: stretch; }
+  .admin-table-search { min-width: min(240px, 100%); flex: 1; }
+  .admin-modal-backdrop { padding: 10px; }
+  .admin-modal { max-height: calc(100dvh - 20px); border-radius: 14px; }
+  .admin-modal-header, .admin-modal-footer { padding: 14px 16px; }
+  .admin-modal-body { padding: 16px; }
+  .admin-btn { min-height: 44px; }
   .admin-page-title {
     font-size: 15px;
   }
+}
+
+@media (max-width: 420px) {
+  .admin-stats-grid { grid-template-columns: 1fr; }
+  .admin-topbar-left { width: 100%; }
+  .admin-topbar-actions { width: 100%; justify-content: flex-start; }
 }

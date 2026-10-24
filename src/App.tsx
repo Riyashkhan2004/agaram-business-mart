@@ -12,12 +12,16 @@ import {
   type Product, type StationeryCategory, type CategorySlug, type ProductReview, type WholesaleTier, type SubCategory
 } from './data/products'
 import {
-  API_URL, fetchProducts, validateCoupon, createOrder, fetchOrders,
+  API_URL, fetchProducts, validateCoupon, createOrder, fetchUserOrders,
   fetchAdminOrders, adminLogin, customerLogin, signUp, verifyEmail, logout, getSession,
   saveProduct, deleteProduct, pingBackend, type ApiOrder
 } from './api'
 import { MapLocationPickerModal } from './components/MapLocationPickerModal'
 import { DeliveryPartnerLiveMapModal } from './components/DeliveryPartnerLiveMapModal'
+import { AccountPage as AccountProfilePage } from './pages/AccountPage'
+import { HomePage as WholesaleHomePage } from './pages/HomePage'
+import { CategoryPage as CatalogCategoryPage } from './pages/CategoryPage'
+import { ProductDetailPage as CatalogProductDetailPage } from './pages/ProductDetailPage'
 
 export type Language = 'en' | 'ta'
 export type CustomerType = 'retail' | 'wholesale'
@@ -184,14 +188,7 @@ export default function App() {
     }
     return stored
   })
-  const [products, setProducts] = useState<Product[]>(() => {
-    const custom = readStorage<Product[]>('abm_custom_products', [])
-    if (custom.length > 0) {
-      const customIds = new Set(custom.map(p => p.id))
-      return [...custom, ...defaultProducts.filter(p => !customIds.has(p.id))]
-    }
-    return defaultProducts
-  })
+  const [products, setProducts] = useState<Product[]>(defaultProducts)
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false)
   const [themePickerOpen, setThemePickerOpen] = useState(false)
   const [userPincode, setUserPincode] = useState(() => readStorage('abm_pincode', '600001'))
@@ -238,10 +235,23 @@ export default function App() {
   // Load backend session and products
   useEffect(() => {
     pingBackend()
-    fetchProducts().then(setProducts).catch(() => {})
+    const refreshStorefrontProducts = () => fetchProducts().then(setProducts).catch(() => {})
+    refreshStorefrontProducts()
+    const interval = window.setInterval(refreshStorefrontProducts, 30_000)
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === 'abm_products_refresh') refreshStorefrontProducts()
+    }
+    const onProductsUpdated = () => refreshStorefrontProducts()
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('abm_products_updated', onProductsUpdated)
     getSession().then(res => {
       if (res && res.user) setCurrentUser(res.user)
     }).catch(() => {})
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('abm_products_updated', onProductsUpdated)
+    }
   }, [])
 
   // Cart helper functions
@@ -469,17 +479,19 @@ export default function App() {
       <main>
         <Routes>
           <Route path="/" element={
-            <HomePage
+            <WholesaleHomePage
               products={products}
               lang={lang}
               customerType={customerType}
               setCustomerType={setCustomerType}
               wishlist={wishlist}
-              toggleWishlist={toggleWishlist}
-              addToCart={addToCart}
+              onToggleWishlist={toggleWishlist}
+              onAddToCart={addToCart}
               cart={cart}
-              updateCartQty={updateCartQty}
-              openCartDrawer={() => setCartDrawerOpen(true)}
+              onUpdateCartQty={(productId, quantity) => {
+                const currentQty = cart.find(item => item.productId === productId)?.quantity || 0
+                updateCartQty(productId, quantity - currentQty)
+              }}
               onOpenTracking={() => {
                 setActiveTrackingOrder({
                   id: 'ABM-928174',
@@ -487,20 +499,20 @@ export default function App() {
                 })
                 setTrackingModalOpen(true)
               }}
-              onOpenMapPicker={() => setMapPickerOpen(true)}
-              selectedLocation={selectedDeliveryLocation}
             />
           } />
           <Route path="/category/:slug" element={
-            <CategoryPage
+            <CatalogCategoryPage
               products={products}
+              cart={cart}
               customerType={customerType}
               wishlist={wishlist}
-              toggleWishlist={toggleWishlist}
-              addToCart={addToCart}
-              cart={cart}
-              updateCartQty={updateCartQty}
-              openCartDrawer={() => setCartDrawerOpen(true)}
+              onToggleWishlist={toggleWishlist}
+              onAddToCart={addToCart}
+              onUpdateCartQty={(productId, quantity) => {
+                const currentQty = cart.find(item => item.productId === productId)?.quantity || 0
+                updateCartQty(productId, quantity - currentQty)
+              }}
               lang={lang}
             />
           } />
@@ -518,13 +530,14 @@ export default function App() {
             />
           } />
           <Route path="/product/:id" element={
-            <ProductDetailPage
+            <CatalogProductDetailPage
               products={products}
+              cart={cart}
               customerType={customerType}
               wishlist={wishlist}
-              toggleWishlist={toggleWishlist}
-              addToCart={addToCart}
-              userPincode={userPincode}
+              onToggleWishlist={toggleWishlist}
+              onAddToCart={addToCart}
+              lang={lang}
             />
           } />
           <Route path="/cart" element={
@@ -558,10 +571,16 @@ export default function App() {
             />
           } />
           <Route path="/account" element={
-            <AccountPage
+            <AccountProfilePage
               currentUser={currentUser}
               setCurrentUser={setCurrentUser}
               lang={lang}
+              products={products}
+              cart={cart}
+              onAddToCart={addToCart}
+              wishlist={wishlist}
+              toggleWishlist={toggleWishlist}
+              customerType={customerType}
               onOpenTracking={(id, addr) => {
                 setActiveTrackingOrder({
                   id: id || 'ABM-928174',
@@ -578,6 +597,7 @@ export default function App() {
           <Route path="/invoice/:orderId" element={
             <InvoicePage
               products={products}
+              currentUser={currentUser}
               lang={lang}
               onOpenTracking={(id, addr) => {
                 setActiveTrackingOrder({
@@ -2774,29 +2794,34 @@ function CheckoutPage({
 /* ==========================================================================
    TAX INVOICE PAGE (Printable & Downloadable GST Invoice)
    ========================================================================== */
-function InvoicePage({ products, lang = 'en', onOpenTracking }: { products: Product[]; lang?: Language; onOpenTracking?: (orderId: string, address: string) => void }) {
+function InvoicePage({ products, currentUser, lang = 'en', onOpenTracking }: { products: Product[]; currentUser: { id?: string; name?: string; email?: string } | null; lang?: Language; onOpenTracking?: (orderId: string, address: string) => void }) {
   const { orderId } = useParams<{ orderId: string }>()
-  const orders = readStorage<ApiOrder[]>('abm_orders', [])
-  const order = orders.find(o => o.id === orderId) || {
-    id: orderId || 'ABM62219233',
-    date: '18/10/2026',
-    items: [
-      { productId: 101, quantity: 1 },
-    ],
-    total: 188.80,
-    subtotal: 160.00,
-    tax: 28.80,
-    discount: 0,
-    customerType: 'retail' as CustomerType,
-    coinsEarned: 10,
-    customerName: 'ABM Demo Customer',
-    email: 'riyashkhan484@gmail.com',
-    phone: '9876543210',
-    address: 'Cuddalore',
-    city: 'Cuddalore',
-    pincode: '607001',
-    gstin: '33AABCA1234A1Z5',
-  }
+  const [order, setOrder] = useState<ApiOrder | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    setOrder(null)
+    if (!currentUser?.id || !orderId) {
+      setLoading(false)
+      return () => { cancelled = true }
+    }
+    setLoading(true)
+    fetchUserOrders(currentUser.email, currentUser.id)
+      .then(orders => { if (!cancelled) setOrder(orders.find(item => item.id === orderId) || null) })
+      .catch(() => { if (!cancelled) setOrder(null) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [currentUser, orderId])
+
+  if (loading) return <div className="container" style={{ padding: '48px 16px', textAlign: 'center' }}>Loading your invoice…</div>
+  if (!order) return (
+    <div className="container" style={{ padding: '48px 16px', textAlign: 'center' }}>
+      <h1 style={{ fontSize: 22 }}>Invoice not found</h1>
+      <p style={{ color: 'var(--text-muted)' }}>{currentUser ? 'This invoice is not linked to your account.' : 'Sign in to view your invoices.'}</p>
+      <Link to={currentUser ? '/account?tab=orders' : '/account'} className="btn btn-primary">{currentUser ? 'Back to my orders' : 'Sign in'}</Link>
+    </div>
+  )
 
   // Calculate items with GST & taxable breakdown matching Image 2
   const lineItems = order.items.map((item, idx) => {
@@ -3072,22 +3097,7 @@ function AccountPage({
       return
     }
     setLoadingOrders(true)
-    fetchOrders().then(allOrders => {
-      const userOrders = allOrders.filter(o => 
-        (currentUser.id && o.userId === currentUser.id) ||
-        (currentUser.email && o.email && o.email.toLowerCase() === currentUser.email.toLowerCase()) ||
-        (currentUser.name && o.customerName && o.customerName.toLowerCase() === currentUser.name.toLowerCase())
-      )
-      setOrders(userOrders)
-    }).catch(() => {
-      const local = readStorage<ApiOrder[]>('abm_orders', [])
-      const userOrders = local.filter(o => 
-        (currentUser.id && o.userId === currentUser.id) ||
-        (currentUser.email && o.email && o.email.toLowerCase() === currentUser.email.toLowerCase()) ||
-        (currentUser.name && o.customerName && o.customerName.toLowerCase() === currentUser.name.toLowerCase())
-      )
-      setOrders(userOrders)
-    }).finally(() => {
+    fetchUserOrders(currentUser.email, currentUser.id).then(setOrders).catch(() => setOrders([])).finally(() => {
       setLoadingOrders(false)
     })
   }, [currentUser])

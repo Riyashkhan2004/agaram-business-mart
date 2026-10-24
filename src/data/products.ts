@@ -1406,25 +1406,8 @@ export type Language = 'en' | 'ta'
 export type CustomerType = 'retail' | 'wholesale'
 
 export function getProductGallery(product: Product): string[] {
-  if (product.gallery && product.gallery.length >= 3) {
-    return product.gallery
-  }
-  const primary = product.image || 'https://images.unsplash.com/photo-1583485088034-697b5bc54ccd?w=600&auto=format&fit=crop&q=80'
-  const fallbackGallery = [
-    primary,
-    'https://images.unsplash.com/photo-1585776245991-cf89dd7fc73a?w=600&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1544816155-12df9643f363?w=600&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?w=600&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
-  ]
-  if (product.gallery && product.gallery.length > 0) {
-    const combined = [...product.gallery]
-    for (const f of fallbackGallery) {
-      if (!combined.includes(f) && combined.length < 5) combined.push(f)
-    }
-    return combined
-  }
-  return fallbackGallery
+  const images = (product.gallery?.length ? product.gallery : [product.image]).filter(Boolean)
+  return [...new Set(images)].slice(0, 5)
 }
 
 export const t = {

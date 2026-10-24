@@ -35,7 +35,7 @@ export function ClickableDealsBanner({ lang = 'en' }: ClickableDealsBannerProps)
       icon: <BookOpen size={32} color="rgba(255,255,255,0.85)" />,
       bg: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
       shadow: 'rgba(2, 132, 199, 0.35)',
-      link: '/category/notebooks-journals',
+      link: '/category/school-essentials',
     },
     {
       badge: '🎉 PARTY & CELEBRATION',

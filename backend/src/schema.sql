@@ -60,10 +60,15 @@ CREATE TABLE IF NOT EXISTS products (
   stock INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0),
   gst NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK (gst >= 0 AND gst <= 100),
   sku VARCHAR(80) NOT NULL UNIQUE,
+  gallery JSONB NOT NULL DEFAULT '[]'::jsonb,
+  tiers JSONB NOT NULL DEFAULT '[]'::jsonb,
   active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE products ADD COLUMN IF NOT EXISTS gallery JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS tiers JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE INDEX IF NOT EXISTS products_category_active_idx ON products (category, active);
 CREATE INDEX IF NOT EXISTS products_business_active_idx ON products (business, active);

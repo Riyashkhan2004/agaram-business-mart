@@ -31,14 +31,14 @@ export function camelProduct(row) {
   return {
     id: Number(row.id), name: row.name, category: row.category, business: row.business,
     brand: row.brand, price: Number(row.price), mrp: Number(row.mrp), unit: row.unit,
-    image: row.image, gallery: gal, ...(row.badge ? { badge: row.badge } : {}), description: row.description,
+    image: row.image, gallery: gal, tiers: Array.isArray(row.tiers) ? row.tiers : [], ...(row.badge ? { badge: row.badge } : {}), description: row.description,
     stock: Number(row.stock), gst: Number(row.gst), sku: row.sku,
   }
 }
 
 export function camelOrder(row, items = []) {
   return {
-    id: row.order_no, date: new Date(row.created_at).toLocaleDateString('en-IN'),
+    id: row.order_no, userId: row.user_id, date: new Date(row.created_at).toLocaleDateString('en-IN'),
     items: items.map(item => ({ productId: Number(item.product_id), quantity: Number(item.quantity), name: item.product_name, sku: item.sku, price: Number(item.unit_price), gst: Number(item.gst_rate) })),
     total: Number(row.total), subtotal: Number(row.subtotal), tax: Number(row.tax), discount: 0,
     customerType: 'retail', coinsEarned: Math.floor(Number(row.total) / 100),

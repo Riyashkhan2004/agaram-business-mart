@@ -115,30 +115,21 @@ export const AccountPage: React.FC<AccountPageProps> = ({
 
   // Load strictly user-isolated orders
   useEffect(() => {
+    let cancelled = false
+    setOrders([])
     if (!currentUser) {
-      setOrders([])
-      return
+      setOrdersLoading(false)
+      return () => { cancelled = true }
     }
 
     setOrdersLoading(true)
     fetchUserOrders(currentUser.email, currentUser.id)
-      .then(userOrders => {
-        // Double security: verify again on client that orders match currentUser email or id
-        const strictlyIsolated = userOrders.filter(o => {
-          if (currentUser.id && o.userId && o.userId === currentUser.id) return true
-          if (currentUser.email && o.email && o.email.toLowerCase() === currentUser.email.toLowerCase()) return true
-          // In case order was created during this session by this user
-          if (o.customerName && currentUser.name && o.customerName.toLowerCase() === currentUser.name.toLowerCase()) return true
-          return false
-        })
-        setOrders(strictlyIsolated)
-      })
-      .catch(err => {
-        console.error('Failed to fetch user orders:', err)
-      })
+      .then(userOrders => { if (!cancelled) setOrders(userOrders) })
+      .catch(err => console.error('Failed to fetch user orders:', err))
       .finally(() => {
-        setOrdersLoading(false)
+        if (!cancelled) setOrdersLoading(false)
       })
+    return () => { cancelled = true }
   }, [currentUser])
 
   const setTab = (tab: TabKey) => {

@@ -77,6 +77,13 @@ export function HomePage({
 
   return (
     <div className="home-page-container container" style={{ paddingBottom: '30px' }}>
+      {/* The wholesale catalogue is the first thing customers see. */}
+      <Wholesale3DBanner
+        onExploreCatalog={handleScrollToCatalog}
+        totalProducts={products.length}
+        lang={lang}
+      />
+
       {/* 1. INSTAMART LIVE DELIVERY TRACKING PILL BANNER */}
       <div
         className="instamart-live-tracking-pill"
@@ -111,13 +118,6 @@ export function HomePage({
           Track Map ➔
         </span>
       </div>
-
-      {/* 2. BRIGHT 3D MOVABLE WHOLESALE HERO BANNER (Requirement 10) */}
-      <Wholesale3DBanner
-        onExploreCatalog={handleScrollToCatalog}
-        totalProducts={products.length}
-        lang={lang}
-      />
 
       {/* 3. WORKING CLICKABLE DEALS BANNER (Image 3) */}
       <ClickableDealsBanner lang={lang} />

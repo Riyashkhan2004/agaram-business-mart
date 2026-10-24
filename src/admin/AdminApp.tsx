@@ -31,7 +31,8 @@ import {
 } from 'lucide-react'
 import {
   API_URL,
-  fetchProducts,
+  fetchAdminProducts,
+  createProduct,
   saveProduct,
   deleteProduct,
   fetchAdminOrders,
@@ -47,7 +48,7 @@ import {
   type ApiUser,
   type AdminStats
 } from '../api'
-import { categories, brands, money, type Product, type CategorySlug, getProductGallery } from '../data/products'
+import { categories, brands, money, type Product, type CategorySlug, getProductGallery, getProductTiers } from '../data/products'
 
 type AdminTab = 'dashboard' | 'products' | 'orders' | 'customers' | 'database'
 
@@ -55,8 +56,8 @@ export function AdminApp() {
   const [auth, setAuth] = useState<boolean>(() => {
     return Boolean(localStorage.getItem('abm_admin_token'))
   })
-  const [adminEmail, setAdminEmail] = useState('admin@agaram.in')
-  const [password, setPassword] = useState('abm-123-786-abm-secure')
+  const [adminEmail, setAdminEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loginError, setLoginError] = useState('')
   const [currentTab, setCurrentTab] = useState<AdminTab>('dashboard')
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
@@ -87,7 +88,6 @@ export function AdminApp() {
 
   // New Product Form State
   const [newProduct, setNewProduct] = useState<Partial<Product>>({
-    id: Date.now() % 100000,
     name: '',
     nameTa: '',
     category: 'xerox-printing',
@@ -99,11 +99,7 @@ export function AdminApp() {
     gst: 18,
     sku: `ABM-${Math.floor(1000 + Math.random() * 9000)}`,
     image: 'https://images.unsplash.com/photo-1583485088034-697b5bc54ccd?w=600&auto=format&fit=crop&q=80',
-    gallery: [
-      'https://images.unsplash.com/photo-1583485088034-697b5bc54ccd?w=600&auto=format&fit=crop&q=80',
-      'https://images.unsplash.com/photo-1544816155-12df9643f363?w=600&auto=format&fit=crop&q=80',
-      'https://images.unsplash.com/photo-1585776245991-cf89dd7fc73a?w=600&auto=format&fit=crop&q=80'
-    ],
+    gallery: ['https://images.unsplash.com/photo-1583485088034-697b5bc54ccd?w=600&auto=format&fit=crop&q=80'],
     description: 'High-quality tested office & school supplies.',
     badge: 'NEW',
     rating: 4.8,
@@ -129,7 +125,7 @@ export function AdminApp() {
     setLoading(true)
     try {
       const [prods, ords, usrs, st] = await Promise.all([
-        fetchProducts(),
+        fetchAdminProducts(),
         fetchAdminOrders().catch(() => []),
         fetchAdminUsers().catch(() => []),
         fetchAdminStats().catch(() => null)
@@ -149,6 +145,12 @@ export function AdminApp() {
 
   useEffect(() => {
     if (auth) refreshAllData()
+  }, [auth])
+
+  useEffect(() => {
+    if (!auth) return
+    const refreshTimer = window.setInterval(() => refreshAllData(), 30_000)
+    return () => window.clearInterval(refreshTimer)
   }, [auth])
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -173,37 +175,42 @@ export function AdminApp() {
   }, [])
 
   // Helper: Read file from device / phone
-  const handleDeviceImageUpload = (file: File, isEdit: boolean) => {
-    const reader = new FileReader()
-    reader.onload = e => {
-      const dataUrl = e.target?.result as string
-      if (!dataUrl) return
+  const handleDeviceImageUpload = async (files: FileList | null, isEdit: boolean) => {
+    if (!files?.length) return
+    const selectedFiles = Array.from(files).filter(file => file.type.startsWith('image/'))
+    if (selectedFiles.some(file => file.size > 2 * 1024 * 1024)) {
+      setStatusMessage('Each image must be 2 MB or smaller. Please choose smaller files.')
+      return
+    }
+    try {
+      const dataUrls = await Promise.all(selectedFiles.map(file => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Could not read image'))
+        reader.onerror = () => reject(new Error('Could not read image'))
+        reader.readAsDataURL(file)
+      })))
+      const addImages = (existing: string[]) => [...new Set([...dataUrls, ...existing])].slice(0, 5)
       if (isEdit) {
         setEditingProduct(prev => {
           if (!prev) return null
-          const existingGallery = prev.gallery && prev.gallery.length > 0 ? prev.gallery : [prev.image]
-          return {
-            ...prev,
-            image: dataUrl,
-            gallery: [dataUrl, ...existingGallery.filter(img => img !== dataUrl)]
-          }
+          const images = addImages(prev.gallery?.length ? prev.gallery : [prev.image])
+          return { ...prev, image: images[0] || prev.image, gallery: images }
         })
       } else {
         setNewProduct(prev => {
-          const existingGallery = prev.gallery && prev.gallery.length > 0 ? prev.gallery : [prev.image || '']
-          return {
-            ...prev,
-            image: dataUrl,
-            gallery: [dataUrl, ...existingGallery.filter(img => img !== dataUrl)]
-          }
+          const images = addImages(prev.gallery?.length ? prev.gallery : [prev.image || ''])
+          return { ...prev, image: images[0] || prev.image, gallery: images }
         })
       }
+      setStatusMessage('Images added to the product gallery.')
+      window.setTimeout(() => setStatusMessage(''), 3000)
+    } catch {
+      setStatusMessage('Could not read one of those images. Please try another file.')
     }
-    reader.readAsDataURL(file)
   }
 
   // Handle Save / Add Product (Optimistic + Neon DB)
-  const handleSaveProduct = async (p: Product) => {
+  const handleSaveProduct = async (p: Product, isCreate = false) => {
     const multiGallery = p.gallery && p.gallery.length > 0 ? p.gallery : getProductGallery(p)
 
     const safeProduct: Product = {
@@ -218,33 +225,29 @@ export function AdminApp() {
       description: p.description || 'Agaram Verified Premium Stationery',
       sku: p.sku || `ABM-${p.category?.slice(0, 2).toUpperCase()}-${p.id}`,
       image: p.image || multiGallery[0],
-      gallery: multiGallery
+      gallery: multiGallery,
+      tiers: p.tiers?.length ? p.tiers : [
+        { minQty: 1, maxQty: 2, label: '1–2 units', price: Number(p.price) || 0, discountPct: Math.round((((Number(p.mrp) || Number(p.price) || 0) - (Number(p.price) || 0)) / (Number(p.mrp) || 1)) * 100) },
+        { minQty: 3, maxQty: 5, label: '3–5 units', price: Math.round((Number(p.price) || 0) * 0.92), discountPct: Math.round((((Number(p.mrp) || Number(p.price) || 0) - (Number(p.price) || 0) * 0.92) / (Number(p.mrp) || 1)) * 100) },
+        { minQty: 6, label: '6+ units', price: Math.round((Number(p.price) || 0) * 0.84), discountPct: Math.round((((Number(p.mrp) || Number(p.price) || 0) - (Number(p.price) || 0) * 0.84) / (Number(p.mrp) || 1)) * 100) },
+      ]
     }
 
-    // 0ms Optimistic UI update
-    setProducts(prev => {
-      const idx = prev.findIndex(item => item.id === safeProduct.id)
-      if (idx >= 0) {
-        const copy = [...prev]
-        copy[idx] = safeProduct
-        return copy
-      }
-      return [safeProduct, ...prev]
-    })
-    setIsAddingProduct(false)
-    setEditingProduct(null)
-    setStatusMessage(`Product #${safeProduct.id} saved! Syncing with Neon DB...`)
-
     try {
-      await saveProduct(safeProduct)
-      // Broadcast update event so main website tabs receive it immediately
+      const response = isCreate
+        ? await createProduct((({ id: _id, ...product }) => product)(safeProduct))
+        : await saveProduct(safeProduct)
+      const savedProduct = response.product
+      setProducts(prev => [savedProduct, ...prev.filter(item => item.id !== savedProduct.id)])
+      setIsAddingProduct(false)
+      setEditingProduct(null)
+      setStatusMessage(`Product “${savedProduct.name}” is live in the catalogue.`)
       window.dispatchEvent(new CustomEvent('abm_products_updated'))
-      setStatusMessage(`✓ Product #${safeProduct.id} synced with Neon DB!`)
+      localStorage.setItem('abm_products_refresh', String(Date.now()))
       refreshAllData()
       setTimeout(() => setStatusMessage(''), 4000)
     } catch (err: any) {
-      alert(`Error saving to Neon DB: ${err.message}`)
-      refreshAllData()
+      setStatusMessage(`Could not save product: ${err.message || 'Please check your connection and try again.'}`)
     }
   }
 
@@ -255,24 +258,27 @@ export function AdminApp() {
     setProducts(prev => prev.map(p => (p.id === product.id ? updatedProd : p)))
     try {
       await saveProduct(updatedProd)
+      setStatusMessage('Stock updated.')
+      window.setTimeout(() => setStatusMessage(''), 2500)
     } catch (err: any) {
-      console.error('Failed to sync stock change:', err)
+      setStatusMessage(`Could not update stock: ${err.message || 'Please try again.'}`)
+      refreshAllData()
     }
   }
 
   // Handle Delete Product (Optimistic + Neon DB)
   const handleDeleteProduct = async (id: number) => {
     if (!window.confirm(`Are you sure you want to delete Product #${id} from the live store?`)) return
-    setProducts(prev => prev.filter(p => p.id !== id))
-    setStatusMessage(`Product #${id} removed! Updating Neon DB...`)
     try {
       await deleteProduct(id)
+      setProducts(prev => prev.filter(p => p.id !== id))
       window.dispatchEvent(new CustomEvent('abm_products_updated'))
-      setStatusMessage(`✓ Product #${id} deleted from Neon DB!`)
+      localStorage.setItem('abm_products_refresh', String(Date.now()))
+      setStatusMessage(`Product #${id} removed from the catalogue.`)
       refreshAllData()
       setTimeout(() => setStatusMessage(''), 4000)
     } catch (err: any) {
-      alert(`Error deleting product: ${err.message}`)
+      setStatusMessage(`Could not delete product: ${err.message || 'Please try again.'}`)
       refreshAllData()
     }
   }
@@ -532,7 +538,7 @@ export function AdminApp() {
           >
             <Users size={18} />
             <span>Customer Directory</span>
-            <span className="admin-nav-badge">{users.length || 4}</span>
+            <span className="admin-nav-badge">{users.length}</span>
           </button>
 
           <button
@@ -550,7 +556,7 @@ export function AdminApp() {
         <div className="admin-sidebar-footer">
           <div className="admin-db-status">
             <span className="admin-status-dot" />
-            <span>Neon DB: Online ({products.length} Items)</span>
+            <span>{dbConnected ? `Database connected (${products.length} products)` : 'Database connection unavailable'}</span>
           </div>
           <a
             href="/"
@@ -661,8 +667,8 @@ export function AdminApp() {
                     <span>Registered Customers</span>
                     <span>👥</span>
                   </div>
-                  <div className="admin-stat-val">{users.length || 4}</div>
-                  <div className="admin-stat-sub">Neon DB verified accounts</div>
+                  <div className="admin-stat-val">{users.length}</div>
+                  <div className="admin-stat-sub">Customer accounts in the database</div>
                 </div>
               </div>
 
@@ -705,23 +711,19 @@ export function AdminApp() {
                 </div>
 
                 <div className="admin-table-container" style={{ padding: '20px' }}>
-                  <h3 style={{ fontSize: '16px', fontWeight: 800, marginBottom: '14px' }}>Live Neon DB Infrastructure</h3>
+                  <h3 style={{ fontSize: '16px', fontWeight: 800, marginBottom: '14px' }}>Live store connections</h3>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12.5px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--admin-line)', paddingBottom: '8px' }}>
-                      <span>Host:</span>
-                      <code style={{ color: '#38bdf8' }}>ep-rapid-sea-ao4lg32c-pooler</code>
+                      <span>Store API:</span>
+                      <code style={{ color: '#38bdf8' }}>{API_URL}</code>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--admin-line)', paddingBottom: '8px' }}>
-                      <span>Region:</span>
-                      <span>AWS ap-southeast-1 (Singapore)</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--admin-line)', paddingBottom: '8px' }}>
-                      <span>SSL Connection:</span>
-                      <span style={{ color: '#10b981', fontWeight: 800 }}>✓ TLS 1.3 Verified</span>
+                      <span>Database:</span>
+                      <span style={{ color: dbConnected ? '#10b981' : '#f87171', fontWeight: 800 }}>{dbConnected ? 'Connected' : 'Unavailable'}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Connected Tables:</span>
-                      <span>products, orders, order_items, users, admins</span>
+                      <span>Live data:</span>
+                      <span>{products.length} products · {orders.length} orders · {users.length} customers</span>
                     </div>
                   </div>
                 </div>
@@ -1024,7 +1026,7 @@ export function AdminApp() {
               <div className="admin-table-header">
                 <h3 style={{ fontSize: '16px', fontWeight: 800 }}>Customer Accounts</h3>
                 <div style={{ fontSize: '12px', color: 'var(--admin-text-soft)' }}>
-                  Total Registered: {users.length || 4}
+                  Total Registered: {users.length}
                 </div>
               </div>
               <div style={{ overflowX: 'auto' }}>
@@ -1032,23 +1034,17 @@ export function AdminApp() {
                   <thead>
                     <tr>
                       <th>Customer Name</th>
+                      <th>Customer ID</th>
                       <th>Email Address</th>
                       <th>User Role</th>
                       <th>Registered On</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {(users.length > 0
-                      ? users
-                      : [
-                          { id: '1', name: 'Praveen Kumar', email: 'praveen@gmail.com', role: 'customer', createdAt: '2026-10-18' },
-                          { id: '2', name: 'Spidey Riyas', email: 'spideyriyas@gmail.com', role: 'customer', createdAt: '2026-10-19' },
-                          { id: '3', name: 'Deva ABM', email: 'deva123@gmail.com', role: 'customer', createdAt: '2026-10-20' },
-                          { id: '4', name: 'Store Administrator', email: 'admin@agaram.in', role: 'admin', createdAt: '2026-10-01' }
-                        ]
-                    ).map(u => (
+                    {users.map(u => (
                       <tr key={u.id}>
                         <td style={{ fontWeight: 800 }}>{u.name}</td>
+                        <td><code style={{ fontSize: '10px', color: 'var(--admin-text-soft)' }}>{u.id}</code></td>
                         <td style={{ color: 'var(--admin-text-soft)' }}>{u.email}</td>
                         <td>
                           <span
@@ -1081,30 +1077,32 @@ export function AdminApp() {
               <div className="admin-table-container" style={{ padding: '24px' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Database size={20} color="#10b981" />
-                  Neon Serverless PostgreSQL Database Connection
+                  Store database connection
                 </h3>
                 <p style={{ fontSize: '13px', color: 'var(--admin-text-muted)', marginBottom: '20px' }}>
-                  Your store's data is persisted in a high-availability Neon PostgreSQL cluster with auto-pooling and continuous write-ahead log backups.
+                  Check that the admin page can load products, orders, and customer accounts from your connected database.
                 </p>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px', marginBottom: '24px' }}>
                   <div style={{ padding: '14px', background: 'var(--admin-bg)', borderRadius: '10px', border: '1px solid var(--admin-border)' }}>
                     <div style={{ fontSize: '11px', color: 'var(--admin-text-soft)', textTransform: 'uppercase', fontWeight: 800 }}>Database Status</div>
-                    <div style={{ fontSize: '18px', fontWeight: 900, color: '#10b981', marginTop: '4px' }}>CONNECTED & HEALTHY</div>
+                    <div style={{ fontSize: '18px', fontWeight: 900, color: dbConnected ? '#10b981' : '#f87171', marginTop: '4px' }}>
+                      {dbConnected === null ? 'Checking connection…' : dbConnected ? 'Connected' : 'Unavailable'}
+                    </div>
                   </div>
                   <div style={{ padding: '14px', background: 'var(--admin-bg)', borderRadius: '10px', border: '1px solid var(--admin-border)' }}>
                     <div style={{ fontSize: '11px', color: 'var(--admin-text-soft)', textTransform: 'uppercase', fontWeight: 800 }}>Total Catalog Products</div>
                     <div style={{ fontSize: '18px', fontWeight: 900, marginTop: '4px' }}>{products.length} Items Live</div>
                   </div>
                   <div style={{ padding: '14px', background: 'var(--admin-bg)', borderRadius: '10px', border: '1px solid var(--admin-border)' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--admin-text-soft)', textTransform: 'uppercase', fontWeight: 800 }}>Render API URL</div>
+                    <div style={{ fontSize: '11px', color: 'var(--admin-text-soft)', textTransform: 'uppercase', fontWeight: 800 }}>Store API</div>
                     <div style={{ fontSize: '13px', fontWeight: 800, marginTop: '4px', color: '#38bdf8' }}>{API_URL}</div>
                   </div>
                 </div>
 
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                   <button onClick={refreshAllData} className="admin-btn admin-btn-primary">
-                    <RefreshCw size={15} /> Force Reload from Neon PostgreSQL
+                    <RefreshCw size={15} /> Refresh live data
                   </button>
                   <a href="/" target="_blank" rel="noreferrer" className="admin-btn admin-btn-secondary">
                     Open Live Customer Storefront <ArrowUpRight size={14} />
@@ -1121,7 +1119,7 @@ export function AdminApp() {
         <div className="admin-modal-backdrop" onClick={() => setIsAddingProduct(false)}>
           <div className="admin-modal" style={{ maxWidth: '640px' }} onClick={e => e.stopPropagation()}>
             <div className="admin-modal-header">
-              <h3 style={{ fontSize: '16px', fontWeight: 800 }}>Add New Product to Neon DB</h3>
+              <h3 style={{ fontSize: '16px', fontWeight: 800 }}>Add product to the live catalogue</h3>
               <button onClick={() => setIsAddingProduct(false)} style={{ background: 'none', border: 'none', color: 'var(--admin-text-soft)', cursor: 'pointer' }}>
                 <X size={20} />
               </button>
@@ -1129,22 +1127,11 @@ export function AdminApp() {
             <form
               onSubmit={e => {
                 e.preventDefault()
-                handleSaveProduct(newProduct as Product)
+                handleSaveProduct(newProduct as Product, true)
               }}
             >
               <div className="admin-modal-body">
-                <div className="admin-form-row">
-                  <div className="admin-form-group">
-                    <label>Product ID (Numeric)</label>
-                    <input
-                      type="number"
-                      required
-                      value={newProduct.id}
-                      onChange={e => setNewProduct(p => ({ ...p, id: Number(e.target.value) }))}
-                      className="admin-form-input"
-                    />
-                  </div>
-                  <div className="admin-form-group">
+                <div className="admin-form-group">
                     <label>SKU (Stock Keeping Unit)</label>
                     <input
                       type="text"
@@ -1153,7 +1140,6 @@ export function AdminApp() {
                       onChange={e => setNewProduct(p => ({ ...p, sku: e.target.value }))}
                       className="admin-form-input"
                     />
-                  </div>
                 </div>
 
                 <div className="admin-form-group">
@@ -1265,10 +1251,11 @@ export function AdminApp() {
                       ref={addFileInputRef}
                       type="file"
                       accept="image/*"
+                      multiple
                       style={{ display: 'none' }}
                       onChange={e => {
-                        const file = e.target.files?.[0]
-                        if (file) handleDeviceImageUpload(file, false)
+                        void handleDeviceImageUpload(e.target.files, false)
+                        e.currentTarget.value = ''
                       }}
                     />
                     <button
@@ -1283,13 +1270,20 @@ export function AdminApp() {
                   </div>
 
                   <input
-                    type="url"
+                    type="text"
                     required
                     placeholder="https://..."
                     value={newProduct.image}
-                    onChange={e => setNewProduct(p => ({ ...p, image: e.target.value }))}
+                    onChange={e => setNewProduct(p => ({ ...p, image: e.target.value, gallery: [e.target.value, ...(p.gallery || []).slice(1)] }))}
                     className="admin-form-input"
                   />
+
+                  <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', marginTop: '10px' }}>
+                    {(newProduct.gallery || [newProduct.image || '']).filter(Boolean).map((image, index) => (
+                      <img key={`${index}-${image.slice(0, 30)}`} src={image} alt={`Product image ${index + 1}`} style={{ width: 54, height: 54, objectFit: 'cover', borderRadius: 7, background: '#fff', border: '1px solid var(--admin-border)', flexShrink: 0 }} />
+                    ))}
+                    <span style={{ alignSelf: 'center', fontSize: 11, color: 'var(--admin-text-soft)' }}>{(newProduct.gallery || []).length}/5 images</span>
+                  </div>
 
                   {/* Thumbnail Previews */}
                   {newProduct.image && (
@@ -1309,7 +1303,7 @@ export function AdminApp() {
                   Cancel
                 </button>
                 <button type="submit" className="admin-btn admin-btn-primary">
-                  Save Product to Neon DB
+                  Save product
                 </button>
               </div>
             </form>
@@ -1414,10 +1408,11 @@ export function AdminApp() {
                       ref={editFileInputRef}
                       type="file"
                       accept="image/*"
+                      multiple
                       style={{ display: 'none' }}
                       onChange={e => {
-                        const file = e.target.files?.[0]
-                        if (file) handleDeviceImageUpload(file, true)
+                        void handleDeviceImageUpload(e.target.files, true)
+                        e.currentTarget.value = ''
                       }}
                     />
                     <button
@@ -1431,12 +1426,19 @@ export function AdminApp() {
                   </div>
 
                   <input
-                    type="url"
+                    type="text"
                     required
                     value={editingProduct.image}
-                    onChange={e => setEditingProduct(p => (p ? { ...p, image: e.target.value } : null))}
+                    onChange={e => setEditingProduct(p => (p ? { ...p, image: e.target.value, gallery: [e.target.value, ...(p.gallery || []).slice(1)] } : null))}
                     className="admin-form-input"
                   />
+
+                  <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', marginTop: '10px' }}>
+                    {(editingProduct.gallery || [editingProduct.image]).filter(Boolean).map((image, index) => (
+                      <img key={`${index}-${image.slice(0, 30)}`} src={image} alt={`Product image ${index + 1}`} style={{ width: 54, height: 54, objectFit: 'cover', borderRadius: 7, background: '#fff', border: '1px solid var(--admin-border)', flexShrink: 0 }} />
+                    ))}
+                    <span style={{ alignSelf: 'center', fontSize: 11, color: 'var(--admin-text-soft)' }}>{(editingProduct.gallery || []).length}/5 images</span>
+                  </div>
 
                   {editingProduct.image && (
                     <div style={{ display: 'flex', gap: '8px', marginTop: '10px', alignItems: 'center' }}>
@@ -1455,7 +1457,7 @@ export function AdminApp() {
                   Cancel
                 </button>
                 <button type="submit" className="admin-btn admin-btn-primary">
-                  Update in Neon DB
+                  Save changes
                 </button>
               </div>
             </form>
@@ -1562,19 +1564,13 @@ export function AdminApp() {
                   <div style={{ fontSize: '11.5px', fontWeight: 800, color: 'var(--admin-text-soft)', marginBottom: '6px' }}>
                     WHOLESALE BULK SLABS:
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>1 - 4 pcs:</span>
-                      <b>{money(previewProduct.price)} / pc</b>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#10b981' }}>
-                      <span>5 - 19 pcs:</span>
-                      <b>{money(Math.round(previewProduct.price * 0.95))} / pc (5% Extra)</b>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#10b981' }}>
-                      <span>20+ pcs (Carton):</span>
-                      <b>{money(Math.round(previewProduct.price * 0.90))} / pc (10% Extra)</b>
-                    </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px' }}>
+                    {getProductTiers(previewProduct).map(tier => (
+                      <div key={`${tier.minQty}-${tier.maxQty || 'up'}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                        <span>{tier.label}:</span>
+                        <b style={{ color: '#10b981' }}>{money(tier.price)} / unit · {tier.discountPct}% off</b>
+                      </div>
+                    ))}
                   </div>
                 </div>
 

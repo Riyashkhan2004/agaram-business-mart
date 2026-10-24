@@ -33,7 +33,6 @@ app.use(helmet({
 
 const allowedOrigins = [
   'https://agaram-business-mart.netlify.app',
-  'https://mobileviewer.github.io',
   'http://localhost:5173',
   'http://localhost:3000',
   'http://localhost:4000',
@@ -43,10 +42,8 @@ const allowedOrigins = [
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true)
-    if (allowedOrigins.includes(origin) || origin.endsWith('.netlify.app') || origin.includes('mobileviewer')) {
-      return callback(null, true)
-    }
-    return callback(null, true) // Permissive for preview tools & cross-origin API calls
+    if (allowedOrigins.includes(origin)) return callback(null, true)
+    return callback(null, false)
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -71,8 +68,15 @@ const productSchema = z.object({
   price: z.number().nonnegative(),
   mrp: z.number().nonnegative(),
   unit: z.string().trim().min(1).max(80).default('1 Piece'),
-  image: z.string().min(1).max(2_500_000),
-  gallery: z.array(z.string().min(1).max(2_500_000)).optional(),
+  image: z.string().min(1).max(3_000_000),
+  gallery: z.array(z.string().min(1).max(3_000_000)).max(5).optional(),
+  tiers: z.array(z.object({
+    minQty: z.number().int().positive(),
+    maxQty: z.number().int().positive().optional(),
+    label: z.string().trim().min(1).max(80),
+    price: z.number().nonnegative(),
+    discountPct: z.number().min(0).max(100),
+  })).max(10).optional(),
   badge: z.string().max(60).optional().nullable(),
   description: z.string().max(3000).default('Agaram Verified Premium Stationery'),
   stock: z.number().int().nonnegative().default(100),
@@ -427,7 +431,7 @@ app.get('/api/auth/session', async (req, res, next) => {
     const session = await loadSession(req)
     if (!session) return res.status(401).json({ error: 'No active session' })
     res.json(session.role === 'customer'
-      ? { role: session.role, user: { id: session.sub, name: session.name, phone: session.phone } }
+      ? { role: session.role, user: { id: session.sub, name: session.name, phone: session.phone, email: session.email } }
       : { role: session.role, user: { email: session.email } })
   } catch (error) { next(error) }
 })
@@ -459,13 +463,14 @@ app.post('/api/admin/products', authorize('admin'), async (req, res) => {
     const sku = p.sku || `ABM-${p.category.slice(0, 2).toUpperCase()}-${productId}`
     const mrp = Math.max(p.mrp || 0, p.price || 0)
     const gallery = Array.isArray(p.gallery) && p.gallery.length ? p.gallery : [p.image]
-    const result = await pool.query(`INSERT INTO products(id,name,category,business,brand,price,mrp,unit,image,badge,description,stock,gst,sku,gallery,active)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,TRUE)
+    const tiers = Array.isArray(p.tiers) ? p.tiers : []
+    const result = await pool.query(`INSERT INTO products(id,name,category,business,brand,price,mrp,unit,image,badge,description,stock,gst,sku,gallery,tiers,active)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,TRUE)
       ON CONFLICT(id) DO UPDATE SET
       name=EXCLUDED.name,category=EXCLUDED.category,business=EXCLUDED.business,brand=EXCLUDED.brand,price=EXCLUDED.price,mrp=EXCLUDED.mrp,
       unit=EXCLUDED.unit,image=EXCLUDED.image,badge=EXCLUDED.badge,description=EXCLUDED.description,stock=EXCLUDED.stock,gst=EXCLUDED.gst,
-      sku=EXCLUDED.sku,gallery=EXCLUDED.gallery,active=TRUE,updated_at=NOW() RETURNING *`,
-      [productId, p.name, p.category, p.business || 'stationery', p.brand || 'Agaram Select', p.price, mrp, p.unit || '1 Piece', p.image, p.badge || null, p.description || '', p.stock || 50, p.gst || 18, sku, gallery])
+      sku=EXCLUDED.sku,gallery=EXCLUDED.gallery,tiers=EXCLUDED.tiers,active=TRUE,updated_at=NOW() RETURNING *`,
+      [productId, p.name, p.category, p.business || 'stationery', p.brand || 'Agaram Select', p.price, mrp, p.unit || '1 Piece', p.image, p.badge || null, p.description || '', p.stock ?? 50, p.gst ?? 18, sku, JSON.stringify(gallery), JSON.stringify(tiers)])
     res.status(201).json({ product: camelProduct(result.rows[0]) })
   } catch (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'Product SKU or ID already exists' })
@@ -483,12 +488,13 @@ app.put('/api/admin/products/:id', authorize('admin'), async (req, res) => {
     const sku = product.sku || `ABM-PR-${productId}`
     const mrp = Math.max(product.mrp || 0, product.price || 0)
     const gallery = Array.isArray(product.gallery) && product.gallery.length ? product.gallery : [product.image]
-    const result = await pool.query(`INSERT INTO products(id,name,category,business,brand,price,mrp,unit,image,badge,description,stock,gst,sku,gallery,active)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,TRUE) ON CONFLICT(id) DO UPDATE SET
+    const tiers = Array.isArray(product.tiers) ? product.tiers : []
+    const result = await pool.query(`INSERT INTO products(id,name,category,business,brand,price,mrp,unit,image,badge,description,stock,gst,sku,gallery,tiers,active)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,TRUE) ON CONFLICT(id) DO UPDATE SET
       name=EXCLUDED.name,category=EXCLUDED.category,business=EXCLUDED.business,brand=EXCLUDED.brand,price=EXCLUDED.price,mrp=EXCLUDED.mrp,
       unit=EXCLUDED.unit,image=EXCLUDED.image,badge=EXCLUDED.badge,description=EXCLUDED.description,stock=EXCLUDED.stock,gst=EXCLUDED.gst,
-      sku=EXCLUDED.sku,gallery=EXCLUDED.gallery,active=TRUE,updated_at=NOW() RETURNING *`,
-      [productId, product.name, product.category, product.business || 'stationery', product.brand || 'Agaram Select', product.price, mrp, product.unit || '1 Piece', product.image, product.badge || null, product.description || '', product.stock || 0, product.gst || 18, sku, gallery])
+      sku=EXCLUDED.sku,gallery=EXCLUDED.gallery,tiers=EXCLUDED.tiers,active=TRUE,updated_at=NOW() RETURNING *`,
+      [productId, product.name, product.category, product.business || 'stationery', product.brand || 'Agaram Select', product.price, mrp, product.unit || '1 Piece', product.image, product.badge || null, product.description || '', product.stock ?? 0, product.gst ?? 18, sku, JSON.stringify(gallery), JSON.stringify(tiers)])
     res.json({ product: camelProduct(result.rows[0]) })
   } catch (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'That SKU is already assigned to another product' })
@@ -518,26 +524,14 @@ app.post('/api/orders', async (req, res) => {
 
     let userId = sessionUser?.sub
     if (!userId) {
-      const email = (customer.email || '').trim().toLowerCase()
-      if (email) {
-        const existing = await client.query('SELECT id FROM users WHERE email=$1', [email])
-        if (existing.rowCount) {
-          userId = existing.rows[0].id
-        } else {
-          const newUserId = randomUUID()
-          const dummyHash = await bcrypt.hash(randomBytes(16).toString('hex'), 8)
-          await client.query('INSERT INTO users(id, name, email, phone, email_verified_at, password_hash) VALUES($1, $2, $3, $4, NOW(), $5)',
-            [newUserId, customer.customerName, email, customer.phone, dummyHash])
-          userId = newUserId
-        }
-      } else {
-        const guestId = randomUUID()
-        const dummyEmail = `guest_${Date.now()}_${randomBytes(4).toString('hex')}@guest.agaram.in`
-        const dummyHash = await bcrypt.hash(randomBytes(16).toString('hex'), 8)
-        await client.query('INSERT INTO users(id, name, email, phone, email_verified_at, password_hash) VALUES($1, $2, $3, $4, NOW(), $5)',
-          [guestId, customer.customerName, dummyEmail, customer.phone, dummyHash])
-        userId = guestId
-      }
+      // Guest checkout must not attach an order to an existing account just because
+      // the guest typed that account's email address.
+      const guestId = randomUUID()
+      const guestEmail = `guest_${guestId}@guest.agaram.in`
+      const dummyHash = await bcrypt.hash(randomBytes(16).toString('hex'), 8)
+      await client.query('INSERT INTO users(id, name, email, phone, email_verified_at, password_hash) VALUES($1, $2, $3, $4, NOW(), $5)',
+        [guestId, customer.customerName, guestEmail, customer.phone, dummyHash])
+      userId = guestId
     }
 
     const ids = customer.items.map(item => item.productId)
@@ -588,10 +582,8 @@ async function loadOrders(whereSql, values) {
   return rows.rows.map(row => camelOrder(row, byOrder.get(row.id)||[]))
 }
 
-app.get('/api/orders', async (req, res) => {
-  const session = await loadSession(req)
-  if (!session) return res.status(401).json({ error: 'Sign in to view your orders' })
-  res.json(await loadOrders("WHERE user_id=$1 OR (email IS NOT NULL AND email != '' AND LOWER(email)=LOWER($2))", [session.sub, session.email || '']))
+app.get('/api/orders', authorize('customer'), async (req, res) => {
+  res.json(await loadOrders('WHERE user_id=$1', [req.auth.sub]))
 })
 
 app.get('/api/admin/orders', authorize('admin'), async (_req, res) => res.json(await loadOrders('', [])))

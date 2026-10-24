@@ -50,8 +50,15 @@ export function Wholesale3DBanner({
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={handleMouseLeave}
         onClick={onExploreCatalog}
+        onKeyDown={event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            onExploreCatalog()
+          }
+        }}
         role="button"
         tabIndex={0}
+        aria-label="Browse the complete wholesale stationery and business catalogue"
         style={{
           transform: `rotateX(${rotateX}deg) rotateY(${rotateY}deg) ${isHovered ? 'scale3d(1.015, 1.015, 1.015)' : 'scale3d(1, 1, 1)'}`,
           transition: isHovered ? 'transform 0.08s ease-out' : 'transform 0.5s cubic-bezier(0.16, 1, 0.3, 1)',

@@ -46,7 +46,8 @@ export type AdminStats = {
 
 async function request<T>(route: string, options: RequestInit = {}): Promise<T> {
   const url = API_URL ? `${API_URL}${route}` : route
-  const token = localStorage.getItem('abm_auth_token') || localStorage.getItem('abm_admin_token')
+  const requiresAdmin = route.startsWith('/api/admin') || route === '/api/auth/admin/login' || (route === '/api/auth/session' && Boolean(localStorage.getItem('abm_admin_token')))
+  const token = requiresAdmin ? localStorage.getItem('abm_admin_token') : localStorage.getItem('abm_auth_token')
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
@@ -73,29 +74,11 @@ export const pingBackend = async (): Promise<boolean> => {
 }
 
 export const fetchProducts = async (): Promise<Product[]> => {
-  let backendProducts: Product[] = []
   try {
-    const data = await request<Product[]>('/api/products')
-    if (Array.isArray(data) && data.length > 0) backendProducts = data
+    return await request<Product[]>('/api/products')
   } catch {
-    // Graceful fallback
+    return localProducts
   }
-
-  // Read any custom products added or updated via Admin portal
-  let customProducts: Product[] = []
-  try {
-    const raw = localStorage.getItem('abm_custom_products')
-    if (raw) customProducts = JSON.parse(raw)
-  } catch {}
-
-  const baseList = backendProducts.length > 0 ? backendProducts : localProducts
-  if (!customProducts.length) return baseList
-
-  // Merge custom products: update existing or prepend new
-  const map = new Map<number, Product>()
-  for (const p of baseList) map.set(p.id, p)
-  for (const cp of customProducts) map.set(cp.id, cp)
-  return Array.from(map.values())
 }
 
 export const validateCoupon = async (code: string, total: number) => {
@@ -115,12 +98,14 @@ export const validateCoupon = async (code: string, total: number) => {
 }
 
 export const signUp = async (name: string, email: string, password: string) => {
+  localStorage.removeItem('abm_admin_token')
   const res = await request<{ message: string; user?: { id: string; name: string; email: string }; token?: string; autoVerified?: boolean }>('/api/auth/signup', { method: 'POST', body: JSON.stringify({ name, email, password }) })
   if (res.token) localStorage.setItem('abm_auth_token', res.token)
   return res
 }
 
 export const verifyEmail = async (token: string) => {
+  localStorage.removeItem('abm_admin_token')
   const res = await request<{ user: { id: string; name: string; email: string }; token?: string }>('/api/auth/email/verify', { method: 'POST', body: JSON.stringify({ token }) })
   if (res.token) localStorage.setItem('abm_auth_token', res.token)
   return res
@@ -130,12 +115,14 @@ export const resendVerificationEmail = (email: string) =>
   request<{ message: string }>('/api/auth/email/resend', { method: 'POST', body: JSON.stringify({ email }) })
 
 export const customerLogin = async (email: string, password: string) => {
+  localStorage.removeItem('abm_admin_token')
   const res = await request<{ user: { id: string; name: string; email: string }; token?: string }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
   if (res.token) localStorage.setItem('abm_auth_token', res.token)
   return res
 }
 
 export const adminLogin = async (email: string, password: string) => {
+  localStorage.removeItem('abm_auth_token')
   const res = await request<{ email: string; token?: string }>('/api/auth/admin/login', { method: 'POST', body: JSON.stringify({ email, password }) })
   if (res.token) localStorage.setItem('abm_admin_token', res.token)
   return res
@@ -151,25 +138,15 @@ export const logout = async () => {
 }
 
 export const saveProduct = async (product: Product) => {
-  try {
-    const raw = localStorage.getItem('abm_custom_products')
-    const list: Product[] = raw ? JSON.parse(raw) : []
-    const idx = list.findIndex(p => p.id === product.id)
-    if (idx >= 0) list[idx] = product
-    else list.unshift(product)
-    localStorage.setItem('abm_custom_products', JSON.stringify(list))
-  } catch {}
   return request<{ product: Product }>(`/api/admin/products/${product.id}`, { method: 'PUT', body: JSON.stringify(product) })
 }
 
+export const createProduct = async (product: Omit<Product, 'id'>) =>
+  request<{ product: Product }>('/api/admin/products', { method: 'POST', body: JSON.stringify(product) })
+
+export const fetchAdminProducts = () => request<Product[]>('/api/admin/products')
+
 export const deleteProduct = async (id: number) => {
-  try {
-    const raw = localStorage.getItem('abm_custom_products')
-    if (raw) {
-      const list: Product[] = JSON.parse(raw)
-      localStorage.setItem('abm_custom_products', JSON.stringify(list.filter(p => p.id !== id)))
-    }
-  } catch {}
   return request<{ deleted: boolean }>(`/api/admin/products/${id}`, { method: 'DELETE' })
 }
 
@@ -189,26 +166,9 @@ export const createOrder = (order: {
 export const fetchOrders = () =>
   request<ApiOrder[]>('/api/orders')
 
-export const fetchUserOrders = async (userEmail?: string, userId?: string): Promise<ApiOrder[]> => {
-  try {
-    const data = await request<ApiOrder[]>('/api/orders')
-    if (Array.isArray(data) && data.length > 0) return data
-  } catch {}
-
-  // Strict user isolation: never cross-show orders between accounts (e.g. Praveen vs Spideyriyas)
-  try {
-    const raw = localStorage.getItem('abm_orders')
-    if (raw) {
-      const all: ApiOrder[] = JSON.parse(raw)
-      if (!userEmail && !userId) return []
-      return all.filter(o => {
-        const matchesEmail = userEmail && o.email && o.email.toLowerCase().trim() === userEmail.toLowerCase().trim()
-        const matchesId = userId && (o as any).userId === userId
-        return matchesEmail || matchesId
-      })
-    }
-  } catch {}
-  return []
+export const fetchUserOrders = async (_userEmail?: string, userId?: string): Promise<ApiOrder[]> => {
+  if (!userId) return []
+  return request<ApiOrder[]>('/api/orders')
 }
 
 export const fetchAdminOrders = () =>
