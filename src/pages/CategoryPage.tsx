@@ -87,21 +87,25 @@ export function CategoryPage({
 
       {/* Category navigation moved below the category banner, as requested. */}
       <nav className="category-rail category-rail-under-banner" aria-label="Browse stationery categories">
-        <div className="category-rail-inner">
-          <Link to="/" className="category-pill">
-            <span className="category-pill-icon">✨</span>
-            <span>{lang === 'ta' ? 'அனைத்து ஸ்டேஷனரி' : 'All Stationery'}</span>
+        <div className="category-round-section-title">{lang === 'ta' ? 'பிரிவுகள்' : 'Browse Categories'}</div>
+        <div className="category-main-rounds">
+          <Link to="/" className="category-main-round" aria-label={lang === 'ta' ? 'அனைத்து ஸ்டேஷனரி' : 'All Stationery'}>
+            <span className="category-main-round-icon">✨</span>
+            <span className="category-main-round-label">{lang === 'ta' ? 'அனைத்து ஸ்டேஷனரி' : 'All Stationery'}</span>
           </Link>
           {categories.map(category => (
             <Link
               key={category.slug}
               to={`/category/${category.slug}`}
-              className={`category-pill${category.slug === currentCategory.slug ? ' active' : ''}`}
+              className={`category-main-round${category.slug === currentCategory.slug ? ' active' : ''}`}
               aria-current={category.slug === currentCategory.slug ? 'page' : undefined}
             >
-              <span className="category-pill-icon">{category.icon}</span>
-              <span>{lang === 'ta' && category.nameTa ? category.nameTa : category.name}</span>
-              {category.badge && <span className="category-pill-badge">{category.badge}</span>}
+              <span className="category-main-round-icon">
+                {category.image
+                  ? <img src={category.image} alt="" loading="lazy" />
+                  : category.icon}
+              </span>
+              <span className="category-main-round-label">{lang === 'ta' && category.nameTa ? category.nameTa : category.name}</span>
             </Link>
           ))}
         </div>

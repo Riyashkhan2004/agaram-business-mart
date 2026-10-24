@@ -3385,6 +3385,95 @@ html, body {
   max-width: 760px;
 }
 
+.category-rail-under-banner {
+  margin: 0 0 20px;
+  padding: 0;
+  overflow: visible;
+  white-space: normal;
+  background: transparent;
+  border: 0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.category-round-section-title {
+  margin-bottom: 10px;
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.category-main-rounds {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 3px 2px 10px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.category-main-rounds::-webkit-scrollbar { display: none; }
+
+.category-main-round {
+  display: flex;
+  flex: 0 0 78px;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 0;
+  color: var(--text-muted);
+  text-align: center;
+  text-decoration: none;
+  touch-action: manipulation;
+}
+
+.category-main-round-icon {
+  display: grid;
+  width: 62px;
+  height: 62px;
+  place-items: center;
+  overflow: hidden;
+  border: 1.5px solid rgba(15, 23, 42, 0.1);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+  font-size: 27px;
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.category-main-round-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.category-main-round-label {
+  display: -webkit-box;
+  max-width: 78px;
+  overflow: hidden;
+  color: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.category-main-round.active { color: #15803d; }
+
+.category-main-round.active .category-main-round-icon {
+  border: 2.5px solid #15803d;
+  background: #f0fdf4;
+  box-shadow: 0 6px 18px rgba(21, 128, 61, 0.22), inset 0 0 0 2px #fff;
+  transform: scale(1.04);
+}
+
+.category-main-round:focus-visible {
+  border-radius: 12px;
+  outline: 3px solid #15803d;
+  outline-offset: 3px;
+}
+
 .instamart-coins-pill:focus-visible {
   outline: 3px solid #f59e0b;
   outline-offset: 2px;
@@ -3395,6 +3484,10 @@ html, body {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 8px 4px;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .category-main-round-icon { transition: none; }
 }
 
 @media (max-width: 767px) {
