@@ -74,7 +74,7 @@ export function Wholesale3DBanner({
           cursor: 'pointer',
           position: 'relative',
           overflow: 'hidden',
-          border: '10px solid #f97316',
+          border: 'none',
         }}
       >
         <div className="wholesale-light-row wholesale-light-top" aria-hidden="true">

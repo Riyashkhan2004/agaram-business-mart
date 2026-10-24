@@ -3944,7 +3944,7 @@ html, body {
   to { opacity: 1; filter: brightness(1.28); }
 }
 @media (max-width: 600px) {
-  .wholesale-bulb-card { padding: 32px 20px !important; border-width: 7px !important; }
+  .wholesale-bulb-card { padding: 32px 20px !important; }
   .wholesale-light-top,
   .wholesale-light-bottom { left: 18px; right: 18px; }
   .wholesale-light-side { top: 22px; bottom: 22px; }

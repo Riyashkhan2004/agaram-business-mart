@@ -85,6 +85,28 @@ export function CategoryPage({
         </div>
       </div>
 
+      {/* Category navigation moved below the category banner, as requested. */}
+      <nav className="category-rail category-rail-under-banner" aria-label="Browse stationery categories">
+        <div className="category-rail-inner">
+          <Link to="/" className="category-pill">
+            <span className="category-pill-icon">✨</span>
+            <span>{lang === 'ta' ? 'அனைத்து ஸ்டேஷனரி' : 'All Stationery'}</span>
+          </Link>
+          {categories.map(category => (
+            <Link
+              key={category.slug}
+              to={`/category/${category.slug}`}
+              className={`category-pill${category.slug === currentCategory.slug ? ' active' : ''}`}
+              aria-current={category.slug === currentCategory.slug ? 'page' : undefined}
+            >
+              <span className="category-pill-icon">{category.icon}</span>
+              <span>{lang === 'ta' && category.nameTa ? category.nameTa : category.name}</span>
+              {category.badge && <span className="category-pill-badge">{category.badge}</span>}
+            </Link>
+          ))}
+        </div>
+      </nav>
+
       {/* SUB-CATEGORY MINI ROUNDS (Image 5) */}
       {currentCategory.subcategories && currentCategory.subcategories.length > 0 && (
         <div style={{ marginBottom: '20px' }}>
