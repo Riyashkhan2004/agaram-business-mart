@@ -3865,3 +3865,71 @@ html, body {
 
 
 
+/* Bulb-frame wholesale marquee based on the supplied sign reference. */
+.wholesale-bulb-card {
+  isolation: isolate;
+}
+.wholesale-signboard {
+  position: absolute;
+  inset: 16px;
+  z-index: 0;
+  border: 3px solid rgba(250, 204, 21, 0.9);
+  border-radius: 12px;
+  background: radial-gradient(ellipse at 50% 40%, rgba(16, 100, 57, 0.94), rgba(3, 35, 26, 0.98) 72%);
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.55), 0 0 14px rgba(250, 204, 21, 0.2);
+  pointer-events: none;
+}
+.wholesale-light-row {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  justify-content: space-around;
+  pointer-events: none;
+}
+.wholesale-light-top,
+.wholesale-light-bottom {
+  left: 28px;
+  right: 28px;
+  height: 13px;
+}
+.wholesale-light-top { top: -6px; }
+.wholesale-light-bottom { bottom: -6px; }
+.wholesale-light-side {
+  top: 26px;
+  bottom: 26px;
+  width: 13px;
+  flex-direction: column;
+}
+.wholesale-light-left { left: -6px; }
+.wholesale-light-right { right: -6px; }
+.wholesale-light-row span {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 1px solid #fff2a8;
+  background: #ffe36a;
+  box-shadow: 0 0 5px #fff, 0 0 12px #facc15, 0 0 22px rgba(249, 115, 22, 0.95);
+  animation: wholesale-bulb-glow 1.8s ease-in-out infinite alternate;
+}
+.wholesale-light-row span:nth-child(3n) { animation-delay: -0.7s; }
+.wholesale-light-row span:nth-child(3n + 1) { animation-delay: -1.25s; }
+.wholesale-neon-title {
+  -webkit-text-fill-color: #fff1a8;
+  paint-order: stroke fill;
+  -webkit-text-stroke: 1px rgba(255, 250, 210, 0.9);
+}
+@keyframes wholesale-bulb-glow {
+  from { opacity: 0.72; filter: brightness(0.82); }
+  to { opacity: 1; filter: brightness(1.28); }
+}
+@media (max-width: 600px) {
+  .wholesale-bulb-card { padding: 32px 20px !important; border-width: 7px !important; }
+  .wholesale-light-top,
+  .wholesale-light-bottom { left: 18px; right: 18px; }
+  .wholesale-light-side { top: 22px; bottom: 22px; }
+  .wholesale-signboard { inset: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wholesale-light-row span { animation: none; }
+}

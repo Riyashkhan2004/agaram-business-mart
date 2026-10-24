@@ -1,17 +1,21 @@
 import { useRef } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { categories, type CategorySlug } from '../data/products'
+import { categories as defaultCategories, type StationeryCategory } from '../data/products'
 
 interface MiniRoundCategoriesProps {
   selectedCategory: string
   selectedSubcategory?: string
+  categories?: StationeryCategory[]
   onSelectCategory: (categorySlug: string, subcategoryId?: string) => void
   lang?: 'en' | 'ta'
 }
 
+type MiniRound = { id: string; category: string; subId: string; name: string; icon: string; image?: string; color: string }
+
 export function MiniRoundCategories({
   selectedCategory,
   selectedSubcategory = 'all',
+  categories = defaultCategories,
   onSelectCategory,
   lang = 'en'
 }: MiniRoundCategoriesProps) {
@@ -26,8 +30,7 @@ export function MiniRoundCategories({
     }
   }
 
-  // Curated list of mini round categories matching user's Image 5
-  const miniRounds = [
+  const miniRounds: MiniRound[] = [
     {
       id: 'all',
       category: 'all',
@@ -36,94 +39,15 @@ export function MiniRoundCategories({
       icon: '🏪',
       color: '#15803d',
     },
-    {
-      id: 'pen-cartons',
-      category: 'retailer-bulk',
-      subId: 'pen-cartons',
-      name: lang === 'ta' ? 'பேனா கார்ட்டன் & ஜாடி' : 'Pen Cartons & Jars',
-      icon: '🖊️',
-      color: '#0284c7',
-    },
-    {
-      id: 'correction-pens',
-      category: 'retailer-bulk',
-      subId: 'correction-pens',
-      name: lang === 'ta' ? 'கரெக்ஷன் பேனாக்கள்' : 'Correction Pens',
-      icon: '🖋️',
-      color: '#059669',
-    },
-    {
-      id: 'adhesives-glues',
-      category: 'retailer-bulk',
-      subId: 'adhesives-glues',
-      name: lang === 'ta' ? 'ஃபெவிகால் & பசைகள்' : 'Fevicol & Glue Boxes',
-      icon: '🧴',
-      color: '#ea580c',
-    },
-    {
-      id: 'stationery-tubs',
-      category: 'retailer-bulk',
-      subId: 'stationery-tubs',
-      name: lang === 'ta' ? 'அழிப்பான் & பென்சில் டப்' : 'Eraser & Pencil Tubs',
-      icon: '✏️',
-      color: '#7c3aed',
-    },
-    {
-      id: 'xerox-paper',
-      category: 'xerox-printing',
-      subId: 'copier-paper',
-      name: lang === 'ta' ? 'A4/A3 ஜெராக்ஸ் தாள்' : 'Xerox & A4 Paper',
-      icon: '📄',
-      color: '#e03a1f',
-    },
-    {
-      id: 'refill-inks',
-      category: 'xerox-printing',
-      subId: 'refill-inks',
-      name: lang === 'ta' ? 'பிரிண்டர் இங்க் பாட்டில்கள்' : 'Printer Inks',
-      icon: '💧',
-      color: '#2563eb',
-    },
-    {
-      id: 'aesthetic-pens',
-      category: 'aesthetic-pens',
+    ...categories.map((category, index) => ({
+      id: category.slug,
+      category: category.slug,
       subId: 'all',
-      name: lang === 'ta' ? 'கவாய் ஜெல் பேனாக்கள்' : 'Aesthetic Pens',
-      icon: '🌸',
-      color: '#db2777',
-    },
-    {
-      id: 'highlighters',
-      category: 'highlighters-markers',
-      subId: 'all',
-      name: lang === 'ta' ? 'பாஸ்டல் ஹைலைட்டர்' : 'Highlighters',
-      icon: '🖍️',
-      color: '#f59e0b',
-    },
-    {
-      id: 'notebooks',
-      category: 'notebooks-journals',
-      subId: 'all',
-      name: lang === 'ta' ? 'புல்லட் ஜர்னல் & நோட்' : 'Bullet Journals',
-      icon: '📓',
-      color: '#10b981',
-    },
-    {
-      id: 'sticky-notes',
-      category: 'sticky-notes-washi',
-      subId: 'all',
-      name: lang === 'ta' ? 'வாஷி டேப் & நோட்ஸ்' : 'Sticky Notes',
-      icon: '📑',
-      color: '#8b5cf6',
-    },
-    {
-      id: 'desk-organizers',
-      category: 'desk-organizers',
-      subId: 'all',
-      name: lang === 'ta' ? 'மேஜை அமைப்பாளர்' : 'Desk Organizers',
-      icon: '🗂️',
-      color: '#0891b2',
-    },
+      name: lang === 'ta' && category.nameTa ? category.nameTa : category.name,
+      icon: category.icon,
+      image: category.image,
+      color: ['#0284c7', '#059669', '#ea580c', '#7c3aed', '#e03a1f', '#2563eb', '#db2777', '#f59e0b', '#10b981', '#8b5cf6', '#0891b2'][index % 11],
+    })),
   ]
 
   return (
@@ -206,7 +130,9 @@ export function MiniRoundCategories({
                   transform: isActive ? 'scale(1.06)' : 'scale(1)',
                 }}
               >
-                <span>{round.icon}</span>
+                {round.image
+                  ? <img src={round.image} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                  : <span>{round.icon}</span>}
               </div>
 
               {/* Title Underneath Circle */}

@@ -63,6 +63,7 @@ const productSchema = z.object({
   id: z.number().int().positive().optional(),
   name: z.string().trim().min(1).max(180),
   category: z.string().trim().min(1).max(80),
+  subcategory: z.string().trim().max(100).optional().nullable(),
   business: z.enum(['stationery', 'cctv', 'furniture']).default('stationery'),
   brand: z.string().trim().max(100).default('Agaram Select'),
   price: z.number().nonnegative(),
@@ -83,12 +84,38 @@ const productSchema = z.object({
   gst: z.number().min(0).max(100).default(18),
   sku: z.string().trim().min(1).max(80).optional(),
 }).passthrough().refine(product => product.mrp >= product.price, { message: 'MRP must be at least the selling price' })
+const categorySchema = z.object({
+  slug: z.string().trim().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(80),
+  name: z.string().trim().min(1).max(120),
+  nameTa: z.string().trim().max(120).default(''),
+  icon: z.string().trim().min(1).max(24).default('📦'),
+  image: z.string().max(3_000_000).optional().nullable(),
+  tagline: z.string().trim().max(300).default(''),
+  badge: z.string().trim().max(80).optional().nullable(),
+  subcategories: z.array(z.object({
+    id: z.string().trim().min(1).max(100),
+    name: z.string().trim().min(1).max(120),
+    icon: z.string().trim().min(1).max(24).default('📦'),
+    image: z.string().max(3_000_000).optional().nullable(),
+  })).max(30).default([]),
+})
 const orderSchema = z.object({
   items: z.array(z.object({ productId: z.number().int().positive(), quantity: z.number().int().positive().max(100) })).min(1).max(30),
   customerName: z.string().trim().min(1).max(120), phone: phoneSchema, email: z.union([z.string().email().max(254), z.literal('')]).optional(),
   address: z.string().trim().min(5).max(500), city: z.string().trim().min(1).max(100),
   pincode: z.string().trim().regex(/^\d{6}$/), gstin: z.string().trim().max(20).optional(),
 }).refine(order => new Set(order.items.map(item => item.productId)).size === order.items.length, 'Each product should appear once')
+const savedAddressesSchema = z.object({
+  addresses: z.array(z.object({
+    id: z.string().max(80).optional(),
+    name: z.string().trim().min(1).max(120),
+    phone: phoneSchema,
+    address: z.string().trim().min(5).max(500),
+    city: z.string().trim().min(1).max(100),
+    pincode: z.string().trim().regex(/^\d{6}$/),
+    isDefault: z.boolean().default(false),
+  })).max(20),
+})
 
 const sessionCookieName = production ? '__Host-abm-session' : 'abm_session'
 const hashSession = token => createHash('sha256').update(token).digest('hex')
@@ -282,6 +309,11 @@ app.get('/api/products', async (req, res) => {
   const result = await pool.query(`SELECT * FROM products WHERE ${filters.join(' AND ')} ORDER BY id`, values)
   res.json(result.rows.map(safeProduct))
 })
+const categoryFromRow = row => ({ slug: row.slug, name: row.name, nameTa: row.name_ta, icon: row.icon, image: row.image || undefined, tagline: row.tagline, badge: row.badge || undefined, subcategories: Array.isArray(row.subcategories) ? row.subcategories : [] })
+app.get('/api/categories', async (_req, res) => {
+  const result = await pool.query('SELECT * FROM storefront_categories ORDER BY name')
+  res.json(result.rows.map(categoryFromRow))
+})
 app.get('/api/products/:id', async (req, res) => {
   const id = Number(req.params.id)
   if (!id) return res.status(400).json({ error: 'Invalid product ID' })
@@ -446,8 +478,35 @@ app.post('/api/auth/logout', async (req, res, next) => {
 })
 
 app.get('/api/admin/products', authorize('admin'), async (_req, res) => {
-  const result = await pool.query('SELECT * FROM products ORDER BY active DESC, category, id')
+  const result = await pool.query('SELECT * FROM products WHERE active=TRUE ORDER BY category, id')
   res.json(result.rows.map(safeProduct))
+})
+
+app.get('/api/admin/categories', authorize('admin'), async (_req, res) => {
+  const result = await pool.query('SELECT * FROM storefront_categories ORDER BY name')
+  res.json(result.rows.map(categoryFromRow))
+})
+
+app.put('/api/admin/categories', authorize('admin'), async (req, res) => {
+  const parsed = z.array(categorySchema).max(50).safeParse(req.body?.categories)
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid category details', details: parsed.error.flatten() })
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    for (const category of parsed.data) {
+      await client.query(`INSERT INTO storefront_categories(slug,name,name_ta,icon,image,tagline,badge,subcategories,updated_at)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,NOW())
+        ON CONFLICT(slug) DO UPDATE SET name=EXCLUDED.name,name_ta=EXCLUDED.name_ta,icon=EXCLUDED.icon,image=EXCLUDED.image,
+        tagline=EXCLUDED.tagline,badge=EXCLUDED.badge,subcategories=EXCLUDED.subcategories,updated_at=NOW()`,
+      [category.slug, category.name, category.nameTa, category.icon, category.image || null, category.tagline, category.badge || null, JSON.stringify(category.subcategories)])
+    }
+    const result = await client.query('SELECT * FROM storefront_categories ORDER BY name')
+    await client.query('COMMIT')
+    res.json(result.rows.map(categoryFromRow))
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw error
+  } finally { client.release() }
 })
 
 app.post('/api/admin/products', authorize('admin'), async (req, res) => {
@@ -464,13 +523,13 @@ app.post('/api/admin/products', authorize('admin'), async (req, res) => {
     const mrp = Math.max(p.mrp || 0, p.price || 0)
     const gallery = Array.isArray(p.gallery) && p.gallery.length ? p.gallery : [p.image]
     const tiers = Array.isArray(p.tiers) ? p.tiers : []
-    const result = await pool.query(`INSERT INTO products(id,name,category,business,brand,price,mrp,unit,image,badge,description,stock,gst,sku,gallery,tiers,active)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,TRUE)
+    const result = await pool.query(`INSERT INTO products(id,name,category,subcategory,business,brand,price,mrp,unit,image,badge,description,stock,gst,sku,gallery,tiers,active)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,TRUE)
       ON CONFLICT(id) DO UPDATE SET
-      name=EXCLUDED.name,category=EXCLUDED.category,business=EXCLUDED.business,brand=EXCLUDED.brand,price=EXCLUDED.price,mrp=EXCLUDED.mrp,
+      name=EXCLUDED.name,category=EXCLUDED.category,subcategory=EXCLUDED.subcategory,business=EXCLUDED.business,brand=EXCLUDED.brand,price=EXCLUDED.price,mrp=EXCLUDED.mrp,
       unit=EXCLUDED.unit,image=EXCLUDED.image,badge=EXCLUDED.badge,description=EXCLUDED.description,stock=EXCLUDED.stock,gst=EXCLUDED.gst,
       sku=EXCLUDED.sku,gallery=EXCLUDED.gallery,tiers=EXCLUDED.tiers,active=TRUE,updated_at=NOW() RETURNING *`,
-      [productId, p.name, p.category, p.business || 'stationery', p.brand || 'Agaram Select', p.price, mrp, p.unit || '1 Piece', p.image, p.badge || null, p.description || '', p.stock ?? 50, p.gst ?? 18, sku, JSON.stringify(gallery), JSON.stringify(tiers)])
+      [productId, p.name, p.category, p.subcategory || null, p.business || 'stationery', p.brand || 'Agaram Select', p.price, mrp, p.unit || '1 Piece', p.image, p.badge || null, p.description || '', p.stock ?? 50, p.gst ?? 18, sku, JSON.stringify(gallery), JSON.stringify(tiers)])
     res.status(201).json({ product: camelProduct(result.rows[0]) })
   } catch (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'Product SKU or ID already exists' })
@@ -489,12 +548,12 @@ app.put('/api/admin/products/:id', authorize('admin'), async (req, res) => {
     const mrp = Math.max(product.mrp || 0, product.price || 0)
     const gallery = Array.isArray(product.gallery) && product.gallery.length ? product.gallery : [product.image]
     const tiers = Array.isArray(product.tiers) ? product.tiers : []
-    const result = await pool.query(`INSERT INTO products(id,name,category,business,brand,price,mrp,unit,image,badge,description,stock,gst,sku,gallery,tiers,active)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,TRUE) ON CONFLICT(id) DO UPDATE SET
-      name=EXCLUDED.name,category=EXCLUDED.category,business=EXCLUDED.business,brand=EXCLUDED.brand,price=EXCLUDED.price,mrp=EXCLUDED.mrp,
+    const result = await pool.query(`INSERT INTO products(id,name,category,subcategory,business,brand,price,mrp,unit,image,badge,description,stock,gst,sku,gallery,tiers,active)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,TRUE) ON CONFLICT(id) DO UPDATE SET
+      name=EXCLUDED.name,category=EXCLUDED.category,subcategory=EXCLUDED.subcategory,business=EXCLUDED.business,brand=EXCLUDED.brand,price=EXCLUDED.price,mrp=EXCLUDED.mrp,
       unit=EXCLUDED.unit,image=EXCLUDED.image,badge=EXCLUDED.badge,description=EXCLUDED.description,stock=EXCLUDED.stock,gst=EXCLUDED.gst,
       sku=EXCLUDED.sku,gallery=EXCLUDED.gallery,tiers=EXCLUDED.tiers,active=TRUE,updated_at=NOW() RETURNING *`,
-      [productId, product.name, product.category, product.business || 'stationery', product.brand || 'Agaram Select', product.price, mrp, product.unit || '1 Piece', product.image, product.badge || null, product.description || '', product.stock ?? 0, product.gst ?? 18, sku, JSON.stringify(gallery), JSON.stringify(tiers)])
+      [productId, product.name, product.category, product.subcategory || null, product.business || 'stationery', product.brand || 'Agaram Select', product.price, mrp, product.unit || '1 Piece', product.image, product.badge || null, product.description || '', product.stock ?? 0, product.gst ?? 18, sku, JSON.stringify(gallery), JSON.stringify(tiers)])
     res.json({ product: camelProduct(result.rows[0]) })
   } catch (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'That SKU is already assigned to another product' })
@@ -506,6 +565,35 @@ app.delete('/api/admin/products/:id', authorize('admin'), async (req, res) => {
   const result = await pool.query('UPDATE products SET active=FALSE,updated_at=NOW() WHERE id=$1', [Number(req.params.id)])
   if (!result.rowCount) return res.status(404).json({ error: 'Product not found' })
   res.json({ deleted: true })
+})
+
+const addressFromRow = row => ({ id: row.id, name: row.name, phone: row.phone, address: row.address, city: row.city, pincode: row.pincode, isDefault: row.is_default, expiresAt: row.expires_at })
+app.get('/api/addresses', authorize('customer'), async (req, res) => {
+  await pool.query('DELETE FROM user_addresses WHERE user_id=$1 AND expires_at<=NOW()', [req.auth.sub])
+  const result = await pool.query('SELECT * FROM user_addresses WHERE user_id=$1 AND expires_at>NOW() ORDER BY is_default DESC,created_at DESC', [req.auth.sub])
+  res.json(result.rows.map(addressFromRow))
+})
+
+app.put('/api/addresses', authorize('customer'), async (req, res) => {
+  const parsed = savedAddressesSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'Check the saved address details', details: parsed.error.flatten() })
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query('DELETE FROM user_addresses WHERE user_id=$1', [req.auth.sub])
+    for (let index = 0; index < parsed.data.addresses.length; index += 1) {
+      const address = parsed.data.addresses[index]
+      await client.query(`INSERT INTO user_addresses(user_id,name,phone,address,city,pincode,is_default,expires_at)
+        VALUES($1,$2,$3,$4,$5,$6,$7,NOW()+INTERVAL '1 hour')`,
+      [req.auth.sub, address.name, address.phone, address.address, address.city, address.pincode, address.isDefault || (index === 0 && !parsed.data.addresses.some(item => item.isDefault))])
+    }
+    const result = await client.query('SELECT * FROM user_addresses WHERE user_id=$1 ORDER BY is_default DESC,created_at DESC', [req.auth.sub])
+    await client.query('COMMIT')
+    res.json(result.rows.map(addressFromRow))
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw error
+  } finally { client.release() }
 })
 
 app.post('/api/orders', async (req, res) => {

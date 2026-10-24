@@ -29,7 +29,7 @@ export function camelProduct(row) {
   if (!row) return null
   const gal = Array.isArray(row.gallery) && row.gallery.length > 0 ? row.gallery : [row.image]
   return {
-    id: Number(row.id), name: row.name, category: row.category, business: row.business,
+    id: Number(row.id), name: row.name, category: row.category, ...(row.subcategory ? { subcategory: row.subcategory } : {}), business: row.business,
     brand: row.brand, price: Number(row.price), mrp: Number(row.mrp), unit: row.unit,
     image: row.image, gallery: gal, tiers: Array.isArray(row.tiers) ? row.tiers : [], ...(row.badge ? { badge: row.badge } : {}), description: row.description,
     stock: Number(row.stock), gst: Number(row.gst), sku: row.sku,

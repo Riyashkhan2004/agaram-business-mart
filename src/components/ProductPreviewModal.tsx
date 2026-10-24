@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { X, Star, ShoppingBag, ShieldCheck, Zap, Edit3, Check } from 'lucide-react'
 import { money, type Product } from '../data/products'
 import { getProductGallery } from '../data/products'
@@ -20,13 +20,18 @@ export function ProductPreviewModal({
   isAdminView = false,
   lang = 'en'
 }: ProductPreviewModalProps) {
+  const [selectedImg, setSelectedImg] = useState<string>('')
+  const [added, setAdded] = useState(false)
+
+  useEffect(() => {
+    setSelectedImg(product?.image || '')
+    setAdded(false)
+  }, [product?.id])
+
   if (!product) return null
 
   // Ensure 3 to 5 images for previewing
   const gallery = getProductGallery(product)
-  const [selectedImg, setSelectedImg] = useState<string>(product.image || gallery[0])
-  const [added, setAdded] = useState(false)
-
   const discountPct = product.mrp > product.price
     ? Math.round(((product.mrp - product.price) / product.mrp) * 100)
     : 0

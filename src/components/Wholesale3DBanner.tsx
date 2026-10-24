@@ -46,6 +46,7 @@ export function Wholesale3DBanner({
     >
       <div
         ref={cardRef}
+        className="wholesale-bulb-card"
         onMouseMove={handleMouseMove}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={handleMouseLeave}
@@ -63,9 +64,9 @@ export function Wholesale3DBanner({
           transform: `rotateX(${rotateX}deg) rotateY(${rotateY}deg) ${isHovered ? 'scale3d(1.015, 1.015, 1.015)' : 'scale3d(1, 1, 1)'}`,
           transition: isHovered ? 'transform 0.08s ease-out' : 'transform 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
           transformStyle: 'preserve-3d',
-          background: 'radial-gradient(ellipse at 70% 30%, #e03a1f 0%, #991b1b 45%, #180906 100%)',
+          background: 'linear-gradient(135deg, #073d2e 0%, #062a21 60%, #031b16 100%)',
           borderRadius: '24px',
-          padding: '30px 32px',
+          padding: '42px 40px',
           color: '#ffffff',
           boxShadow: isHovered
             ? '0 30px 70px -10px rgba(224, 58, 31, 0.55), 0 0 35px rgba(251, 191, 36, 0.35)'
@@ -73,9 +74,22 @@ export function Wholesale3DBanner({
           cursor: 'pointer',
           position: 'relative',
           overflow: 'hidden',
-          border: '1.5px solid rgba(254, 240, 138, 0.35)',
+          border: '10px solid #f97316',
         }}
       >
+        <div className="wholesale-light-row wholesale-light-top" aria-hidden="true">
+          {Array.from({ length: 18 }, (_, index) => <span key={index} />)}
+        </div>
+        <div className="wholesale-light-row wholesale-light-bottom" aria-hidden="true">
+          {Array.from({ length: 18 }, (_, index) => <span key={index} />)}
+        </div>
+        <div className="wholesale-light-row wholesale-light-side wholesale-light-left" aria-hidden="true">
+          {Array.from({ length: 5 }, (_, index) => <span key={index} />)}
+        </div>
+        <div className="wholesale-light-row wholesale-light-side wholesale-light-right" aria-hidden="true">
+          {Array.from({ length: 5 }, (_, index) => <span key={index} />)}
+        </div>
+        <div className="wholesale-signboard" aria-hidden="true" />
         {/* Ambient 3D Glowing Flares */}
         <div
           style={{
@@ -145,17 +159,15 @@ export function Wholesale3DBanner({
           {/* BRIGHT 3D MOVABLE WHOLESALE TITLE */}
           <div style={{ transform: 'translateZ(50px)' }}>
             <h1
+              className="wholesale-neon-title"
               style={{
                 fontSize: 'clamp(32px, 6vw, 54px)',
                 fontWeight: 900,
                 lineHeight: 1.05,
                 margin: '0 0 10px 0',
                 letterSpacing: '-0.02em',
-                background: 'linear-gradient(180deg, #ffffff 20%, #fef08a 60%, #f59e0b 100%)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                textShadow: '0 12px 30px rgba(0, 0, 0, 0.5)',
-                filter: 'drop-shadow(0 4px 14px rgba(245, 158, 11, 0.45))',
+                color: '#fff1a8',
+                textShadow: '0 0 6px #fff, 0 0 18px #facc15, 0 0 36px #f97316, 0 5px 0 #b91c1c',
               }}
             >
               {lang === 'ta' ? 'மொத்த விற்பனை' : 'WHOLESALE'}

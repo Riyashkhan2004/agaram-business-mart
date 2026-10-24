@@ -1,4 +1,5 @@
-import { products as localProducts, activeCoupons, type Product } from './data/products'
+import { products as localProducts, activeCoupons, type Product, type StationeryCategory } from './data/products'
+import type { SavedAddress } from './utils/savedAddresses'
 
 export const API_URL = (import.meta.env.VITE_API_URL || 'https://agaram-business-mart.onrender.com').replace(/\/$/, '')
 
@@ -74,11 +75,15 @@ export const pingBackend = async (): Promise<boolean> => {
 }
 
 export const fetchProducts = async (): Promise<Product[]> => {
-  try {
-    return await request<Product[]>('/api/products')
-  } catch {
-    return localProducts
-  }
+  const liveProducts = await request<Product[]>('/api/products')
+  return liveProducts.map(product => {
+    const localDetails = localProducts.find(local => local.id === product.id)
+    return localDetails ? { ...localDetails, ...product, subcategory: product.subcategory || localDetails.subcategory } : product
+  })
+}
+
+export const fetchStoreCategories = async (): Promise<StationeryCategory[]> => {
+  try { return await request<StationeryCategory[]>('/api/categories') } catch { return [] }
 }
 
 export const validateCoupon = async (code: string, total: number) => {
@@ -145,6 +150,16 @@ export const createProduct = async (product: Omit<Product, 'id'>) =>
   request<{ product: Product }>('/api/admin/products', { method: 'POST', body: JSON.stringify(product) })
 
 export const fetchAdminProducts = () => request<Product[]>('/api/admin/products')
+
+export const fetchAdminCategories = () => request<StationeryCategory[]>('/api/admin/categories')
+
+export const saveAdminCategories = (categories: StationeryCategory[]) =>
+  request<StationeryCategory[]>('/api/admin/categories', { method: 'PUT', body: JSON.stringify({ categories }) })
+
+export type ApiAddress = SavedAddress & { expiresAt: string }
+export const fetchUserAddresses = () => request<ApiAddress[]>('/api/addresses')
+export const saveUserAddressesRemote = (addresses: SavedAddress[]) =>
+  request<ApiAddress[]>('/api/addresses', { method: 'PUT', body: JSON.stringify({ addresses }) })
 
 export const deleteProduct = async (id: number) => {
   return request<{ deleted: boolean }>(`/api/admin/products/${id}`, { method: 'DELETE' })

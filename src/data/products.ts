@@ -1,16 +1,4 @@
-export type CategorySlug =
-  | 'office-products'
-  | 'school-essentials'
-  | 'retailer-bulk'
-  | 'xerox-printing'
-  | 'celebration-decor'
-  | 'aesthetic-pens'
-  | 'highlighters-markers'
-  | 'notebooks-journals'
-  | 'sticky-notes-washi'
-  | 'pencil-cases-pouches'
-  | 'art-craft-supplies'
-  | 'desk-organizers'
+export type CategorySlug = string
 
 export type SubCategory = {
   id: string
@@ -232,6 +220,26 @@ export const categories: StationeryCategory[] = [
     ],
   },
 ]
+
+export function mergeStoreCategories(overrides: StationeryCategory[] = []): StationeryCategory[] {
+  const bySlug = new Map(overrides.map(category => [category.slug, category]))
+  const merged = categories.map(category => {
+    const override = bySlug.get(category.slug)
+    if (!override) return category
+    return {
+      ...category,
+      ...override,
+      nameTa: override.nameTa || category.nameTa,
+      icon: override.icon || category.icon,
+      image: override.image || category.image,
+      tagline: override.tagline || category.tagline,
+      badge: override.badge || category.badge,
+      subcategories: override.subcategories ?? category.subcategories,
+    }
+  })
+  const known = new Set(categories.map(category => category.slug))
+  return [...merged, ...overrides.filter(category => !known.has(category.slug))]
+}
 
 export const brands = [
   'Agaram Select',

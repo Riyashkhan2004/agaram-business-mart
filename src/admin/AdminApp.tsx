@@ -27,11 +27,13 @@ import {
   Menu,
   Layers,
   Star,
-  ExternalLink
+  ExternalLink,
+  Store
 } from 'lucide-react'
 import {
   API_URL,
   fetchAdminProducts,
+  fetchAdminCategories,
   createProduct,
   saveProduct,
   deleteProduct,
@@ -40,6 +42,7 @@ import {
   fetchAdminStats,
   updateOrderStatus,
   deleteAdminOrder,
+  saveAdminCategories,
   pingBackend,
   adminLogin,
   getSession,
@@ -48,9 +51,10 @@ import {
   type ApiUser,
   type AdminStats
 } from '../api'
-import { categories, brands, money, type Product, type CategorySlug, getProductGallery, getProductTiers } from '../data/products'
+import { categories as defaultCategories, mergeStoreCategories, brands, money, type Product, type CategorySlug, type StationeryCategory, getProductGallery, getProductTiers } from '../data/products'
+import { StorefrontCategories } from './StorefrontCategories'
 
-type AdminTab = 'dashboard' | 'products' | 'orders' | 'customers' | 'database'
+type AdminTab = 'dashboard' | 'products' | 'storefront' | 'orders' | 'customers' | 'database'
 
 export function AdminApp() {
   const [auth, setAuth] = useState<boolean>(() => {
@@ -65,6 +69,8 @@ export function AdminApp() {
 
   // Real-time Data
   const [products, setProducts] = useState<Product[]>([])
+  const [storeCategories, setStoreCategories] = useState<StationeryCategory[]>(defaultCategories)
+  const [savingCategories, setSavingCategories] = useState(false)
   const [orders, setOrders] = useState<ApiOrder[]>([])
   const [users, setUsers] = useState<ApiUser[]>([])
   const [stats, setStats] = useState<AdminStats | null>(null)
@@ -124,13 +130,15 @@ export function AdminApp() {
   const refreshAllData = async () => {
     setLoading(true)
     try {
-      const [prods, ords, usrs, st] = await Promise.all([
+      const [prods, cats, ords, usrs, st] = await Promise.all([
         fetchAdminProducts(),
+        fetchAdminCategories().catch(() => []),
         fetchAdminOrders().catch(() => []),
         fetchAdminUsers().catch(() => []),
         fetchAdminStats().catch(() => null)
       ])
       setProducts(prods)
+      setStoreCategories(mergeStoreCategories(cats))
       setOrders(ords)
       setUsers(usrs)
       setStats(st)
@@ -140,6 +148,22 @@ export function AdminApp() {
       setDbConnected(false)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleSaveCategories = async (nextCategories: StationeryCategory[]) => {
+    setSavingCategories(true)
+    try {
+      const saved = await saveAdminCategories(nextCategories)
+      setStoreCategories(mergeStoreCategories(saved))
+      window.dispatchEvent(new CustomEvent('abm_categories_updated'))
+      localStorage.setItem('abm_categories_refresh', String(Date.now()))
+      setStatusMessage('Store categories saved and published.')
+      window.setTimeout(() => setStatusMessage(''), 4000)
+    } catch (err) {
+      setStatusMessage(`Could not save categories: ${err instanceof Error ? err.message : 'Please try again.'}`)
+    } finally {
+      setSavingCategories(false)
     }
   }
 
@@ -519,6 +543,17 @@ export function AdminApp() {
 
           <button
             onClick={() => {
+              setCurrentTab('storefront')
+              setMobileMenuOpen(false)
+            }}
+            className={`admin-nav-item ${currentTab === 'storefront' ? 'active' : ''}`}
+          >
+            <Store size={18} />
+            <span>Storefront Categories</span>
+          </button>
+
+          <button
+            onClick={() => {
               setCurrentTab('orders')
               setMobileMenuOpen(false)
             }}
@@ -581,6 +616,7 @@ export function AdminApp() {
             <h1 className="admin-page-title" style={{ textTransform: 'capitalize' }}>
               {currentTab === 'dashboard' && 'Store Analytics & Performance'}
               {currentTab === 'products' && 'Product Inventory Management'}
+              {currentTab === 'storefront' && 'Storefront Categories & Images'}
               {currentTab === 'orders' && 'Real-time Customer Orders'}
               {currentTab === 'customers' && 'Registered Customer Directory'}
               {currentTab === 'database' && 'Neon PostgreSQL Database Hub'}
@@ -659,7 +695,7 @@ export function AdminApp() {
                     <span>🏷️</span>
                   </div>
                   <div className="admin-stat-val">{products.length}</div>
-                  <div className="admin-stat-sub">Across 8 categories</div>
+                  <div className="admin-stat-sub">Across {storeCategories.length} categories</div>
                 </div>
 
                 <div className="admin-stat-card">
@@ -753,7 +789,7 @@ export function AdminApp() {
                     style={{ width: 'auto', paddingLeft: '12px' }}
                   >
                     <option value="all">All Categories</option>
-                    {categories.map(c => (
+                    {storeCategories.map(c => (
                       <option key={c.slug} value={c.slug}>
                         {c.name}
                       </option>
@@ -813,7 +849,7 @@ export function AdminApp() {
                         </td>
                         <td>
                           <span style={{ fontSize: '11px', background: 'var(--admin-bg)', padding: '3px 8px', borderRadius: '6px' }}>
-                            {categories.find(c => c.slug === p.category)?.name || p.category}
+                            {storeCategories.find(c => c.slug === p.category)?.name || p.category}
                           </span>
                         </td>
                         <td style={{ fontSize: '12px' }}>{p.brand}</td>
@@ -907,6 +943,10 @@ export function AdminApp() {
                 </table>
               </div>
             </div>
+          )}
+
+          {currentTab === 'storefront' && (
+            <StorefrontCategories categories={storeCategories} saving={savingCategories} onSave={handleSaveCategories} />
           )}
 
           {/* TAB 3: CUSTOMER ORDERS */}
@@ -1170,10 +1210,10 @@ export function AdminApp() {
                     <label>Category</label>
                     <select
                       value={newProduct.category}
-                      onChange={e => setNewProduct(p => ({ ...p, category: e.target.value as CategorySlug }))}
+                      onChange={e => setNewProduct(p => ({ ...p, category: e.target.value as CategorySlug, subcategory: undefined }))}
                       className="admin-form-input"
                     >
-                      {categories.map(c => (
+                      {storeCategories.map(c => (
                         <option key={c.slug} value={c.slug}>
                           {c.name}
                         </option>
@@ -1189,6 +1229,20 @@ export function AdminApp() {
                       className="admin-form-input"
                     />
                   </div>
+                </div>
+
+                <div className="admin-form-group">
+                  <label>Subcategory filter</label>
+                  <select
+                    value={newProduct.subcategory || ''}
+                    onChange={e => setNewProduct(p => ({ ...p, subcategory: e.target.value || undefined }))}
+                    className="admin-form-input"
+                  >
+                    <option value="">No subcategory</option>
+                    {storeCategories.find(c => c.slug === newProduct.category)?.subcategories.filter(sub => sub.id !== 'all').map(sub => (
+                      <option key={sub.id} value={sub.id}>{sub.name}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="admin-form-row">
@@ -1347,6 +1401,32 @@ export function AdminApp() {
                     onChange={e => setEditingProduct(p => (p ? { ...p, nameTa: e.target.value } : null))}
                     className="admin-form-input"
                   />
+                </div>
+
+                <div className="admin-form-row">
+                  <div className="admin-form-group">
+                    <label>Category</label>
+                    <select
+                      value={editingProduct.category}
+                      onChange={e => setEditingProduct(p => p ? { ...p, category: e.target.value, subcategory: undefined } : null)}
+                      className="admin-form-input"
+                    >
+                      {storeCategories.map(category => <option key={category.slug} value={category.slug}>{category.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="admin-form-group">
+                    <label>Subcategory filter</label>
+                    <select
+                      value={editingProduct.subcategory || ''}
+                      onChange={e => setEditingProduct(p => p ? { ...p, subcategory: e.target.value || undefined } : null)}
+                      className="admin-form-input"
+                    >
+                      <option value="">No subcategory</option>
+                      {storeCategories.find(category => category.slug === editingProduct.category)?.subcategories.filter(sub => sub.id !== 'all').map(sub => (
+                        <option key={sub.id} value={sub.id}>{sub.name}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 <div className="admin-form-row">

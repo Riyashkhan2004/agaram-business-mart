@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { ShieldCheck, Truck, Check, Lock, ArrowLeft, ArrowRight } from 'lucide-react'
 import { money, type Product } from '../data/products'
-import { createOrder, customerLogin, signUp, type ApiOrder } from '../api'
+import { createOrder, fetchUserAddresses, saveUserAddressesRemote, customerLogin, signUp, type ApiOrder } from '../api'
+import { loadSavedAddresses, saveUserAddresses } from '../utils/savedAddresses'
 
 interface CheckoutPageProps {
   cart: { productId: number; quantity: number }[]
@@ -29,10 +30,10 @@ export function CheckoutPage({
 
   // Checkout Form State
   const [name, setName] = useState(currentUser?.name || '')
-  const [phone, setPhone] = useState('+919840012345')
+  const [phone, setPhone] = useState('')
   const [email, setEmail] = useState(currentUser?.email || '')
-  const [address, setAddress] = useState('No 12, Main Bazaar Road, Near Bus Stand')
-  const [city, setCity] = useState('Cuddalore')
+  const [address, setAddress] = useState('')
+  const [city, setCity] = useState('')
   const [pincode, setPincode] = useState(userPincode || '607001')
   const [gstin, setGstin] = useState('')
   const [paymentMode, setPaymentMode] = useState<'upi' | 'card' | 'cod'>('upi')
@@ -44,6 +45,41 @@ export function CheckoutPage({
   const [authPassword, setAuthPassword] = useState('')
   const [authName, setAuthName] = useState('')
   const [authError, setAuthError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    const applySavedAddress = (saved: Array<{ name: string; phone: string; address: string; city: string; pincode: string; isDefault: boolean }>) => {
+      if (cancelled) return
+      const preferred = saved.find(item => item.isDefault) || saved[0]
+      if (preferred) {
+        setName(currentUser?.name || preferred.name)
+        setPhone(preferred.phone)
+        setAddress(preferred.address)
+        setCity(preferred.city)
+        setPincode(preferred.pincode)
+      } else {
+        setName(currentUser?.name || '')
+        setEmail(currentUser?.email || '')
+        setPhone('')
+        setAddress('')
+        setCity('')
+        setPincode(userPincode || '')
+      }
+    }
+    if (!currentUser?.id) {
+      setName(currentUser?.name || '')
+      setEmail(currentUser?.email || '')
+      setPhone('')
+      setAddress('')
+      setCity('')
+      setPincode(userPincode || '')
+    } else {
+      fetchUserAddresses().then(remote => applySavedAddress(remote.filter(item => Date.parse(item.expiresAt) > Date.now()))).catch(() => {
+        applySavedAddress(loadSavedAddresses(currentUser.id).addresses)
+      })
+    }
+    return () => { cancelled = true }
+  }, [currentUser?.id])
 
   const cartItemsWithDetails = cart.map(item => {
     const product = products.find(p => p.id === item.productId)
@@ -103,7 +139,24 @@ export function CheckoutPage({
       gstin: gstin || undefined,
     }
 
+    const previousAddresses = loadSavedAddresses(currentUser.id).addresses
+    const matchingAddress = previousAddresses.find(item => item.address === address && item.city === city && item.pincode === pincode)
+    const addressList = [
+      {
+        id: matchingAddress?.id || `checkout-${Date.now()}`,
+        name,
+        phone,
+        address,
+        city,
+        pincode,
+        isDefault: true,
+      },
+      ...previousAddresses.filter(item => item.id !== matchingAddress?.id && !(item.address === address && item.city === city && item.pincode === pincode)).map(item => ({ ...item, isDefault: false })),
+    ]
+    saveUserAddresses(currentUser.id, addressList)
+
     try {
+      await saveUserAddressesRemote(addressList).catch(() => {})
       const res = await createOrder(orderData)
       // Save order in user-specific local storage cache
       const order = res.order
@@ -294,6 +347,9 @@ export function CheckoutPage({
                 onChange={e => setAddress(e.target.value)}
                 style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontSize: '13px', boxSizing: 'border-box' }}
               />
+              <span style={{ display: 'block', marginTop: '5px', color: '#64748b', fontSize: '11px' }}>
+                This delivery address is saved to your account for one hour when you place your order.
+              </span>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '12px' }}>

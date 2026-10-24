@@ -6,10 +6,11 @@ import { ClickableDealsBanner } from '../components/ClickableDealsBanner'
 import { MiniRoundCategories } from '../components/MiniRoundCategories'
 import { ProductCard } from '../components/ProductCard'
 import { ProductPreviewModal } from '../components/ProductPreviewModal'
-import { categories, money, type Product } from '../data/products'
+import { categories as defaultCategories, money, type Product, type StationeryCategory } from '../data/products'
 
 interface HomePageProps {
   products: Product[]
+  categories?: StationeryCategory[]
   cart: { productId: number; quantity: number }[]
   wishlist: number[]
   onAddToCart: (id: number, qty?: number) => void
@@ -23,6 +24,7 @@ interface HomePageProps {
 
 export function HomePage({
   products,
+  categories = defaultCategories,
   cart,
   wishlist,
   onAddToCart,
@@ -124,6 +126,7 @@ export function HomePage({
 
       {/* 4. CIRCULAR MINI ROUND CATEGORIES CAROUSEL (Image 5) */}
       <MiniRoundCategories
+        categories={categories}
         selectedCategory={selectedCategory}
         selectedSubcategory={selectedSubcategory}
         onSelectCategory={(cat, sub) => {

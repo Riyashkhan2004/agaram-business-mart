@@ -8,11 +8,11 @@ import {
   Zap, UploadCloud, LayoutGrid, CheckCircle, Flame
 } from 'lucide-react'
 import {
-  products as defaultProducts, categories, brands, sampleReviews, activeCoupons, money, unitPrice, getProductTiers,
+  products as defaultProducts, categories, mergeStoreCategories, brands, sampleReviews, activeCoupons, money, unitPrice, getProductTiers,
   type Product, type StationeryCategory, type CategorySlug, type ProductReview, type WholesaleTier, type SubCategory
 } from './data/products'
 import {
-  API_URL, fetchProducts, validateCoupon, createOrder, fetchUserOrders,
+  API_URL, fetchProducts, fetchStoreCategories, validateCoupon, createOrder, fetchUserOrders,
   fetchAdminOrders, adminLogin, customerLogin, signUp, verifyEmail, logout, getSession,
   saveProduct, deleteProduct, pingBackend, type ApiOrder
 } from './api'
@@ -189,11 +189,13 @@ export default function App() {
     return stored
   })
   const [products, setProducts] = useState<Product[]>(defaultProducts)
+  const [storeCategories, setStoreCategories] = useState<StationeryCategory[]>(categories)
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false)
   const [themePickerOpen, setThemePickerOpen] = useState(false)
   const [userPincode, setUserPincode] = useState(() => readStorage('abm_pincode', '600001'))
   const [pincodeModalOpen, setPincodeModalOpen] = useState(false)
   const [currentUser, setCurrentUser] = useState<{ id?: string; name?: string; email?: string } | null>(null)
+  const [locationOwnerId, setLocationOwnerId] = useState<string | null>(null)
   const [mapPickerOpen, setMapPickerOpen] = useState(false)
   const [trackingModalOpen, setTrackingModalOpen] = useState(false)
   const [activeTrackingOrder, setActiveTrackingOrder] = useState<{ id: string; address: string }>({
@@ -205,7 +207,7 @@ export default function App() {
     city: string
     pincode: string
     label: string
-  }>(() => readStorage('abm_delivery_loc', {
+  }>(() => ({
     address: 'Main Road, Cuddalore',
     city: 'Cuddalore',
     pincode: '607001',
@@ -213,11 +215,31 @@ export default function App() {
   }))
 
   useEffect(() => {
-    localStorage.setItem('abm_delivery_loc', JSON.stringify(selectedDeliveryLocation))
+    if (currentUser?.id) {
+      const key = `abm_delivery_loc_${encodeURIComponent(currentUser.id)}`
+      try {
+        const saved = JSON.parse(localStorage.getItem(key) || 'null') as { expiresAt?: number; location?: typeof selectedDeliveryLocation } | null
+        if (saved?.expiresAt && saved.expiresAt > Date.now() && saved.location) setSelectedDeliveryLocation(saved.location)
+        else localStorage.removeItem(key)
+      } catch { localStorage.removeItem(key) }
+      setLocationOwnerId(currentUser.id)
+    } else {
+      setLocationOwnerId(null)
+      setSelectedDeliveryLocation({ address: 'Main Road, Cuddalore', city: 'Cuddalore', pincode: '607001', label: 'Home' })
+    }
+  }, [currentUser?.id])
+
+  useEffect(() => {
+    if (currentUser?.id && locationOwnerId === currentUser.id) {
+      localStorage.setItem(`abm_delivery_loc_${encodeURIComponent(currentUser.id)}`, JSON.stringify({
+        expiresAt: Date.now() + 60 * 60 * 1000,
+        location: selectedDeliveryLocation,
+      }))
+    }
     if (selectedDeliveryLocation.pincode) {
       setUserPincode(selectedDeliveryLocation.pincode)
     }
-  }, [selectedDeliveryLocation])
+  }, [currentUser?.id, locationOwnerId, selectedDeliveryLocation])
 
   // Apply theme to document
   useEffect(() => {
@@ -236,14 +258,21 @@ export default function App() {
   useEffect(() => {
     pingBackend()
     const refreshStorefrontProducts = () => fetchProducts().then(setProducts).catch(() => {})
+    const refreshStorefrontCategories = () => fetchStoreCategories().then(remote => {
+      if (remote.length) setStoreCategories(mergeStoreCategories(remote))
+    }).catch(() => {})
     refreshStorefrontProducts()
+    refreshStorefrontCategories()
     const interval = window.setInterval(refreshStorefrontProducts, 30_000)
     const onStorage = (event: StorageEvent) => {
       if (event.key === 'abm_products_refresh') refreshStorefrontProducts()
+      if (event.key === 'abm_categories_refresh') refreshStorefrontCategories()
     }
     const onProductsUpdated = () => refreshStorefrontProducts()
+    const onCategoriesUpdated = () => refreshStorefrontCategories()
     window.addEventListener('storage', onStorage)
     window.addEventListener('abm_products_updated', onProductsUpdated)
+    window.addEventListener('abm_categories_updated', onCategoriesUpdated)
     getSession().then(res => {
       if (res && res.user) setCurrentUser(res.user)
     }).catch(() => {})
@@ -251,6 +280,7 @@ export default function App() {
       window.clearInterval(interval)
       window.removeEventListener('storage', onStorage)
       window.removeEventListener('abm_products_updated', onProductsUpdated)
+      window.removeEventListener('abm_categories_updated', onCategoriesUpdated)
     }
   }, [])
 
@@ -465,7 +495,7 @@ export default function App() {
             <span className="category-pill-icon">✨</span>
             <span>{t[lang].allStationery}</span>
           </Link>
-          {categories.map(cat => (
+          {storeCategories.map(cat => (
             <Link key={cat.slug} to={`/category/${cat.slug}`} className="category-pill">
               <span className="category-pill-icon">{cat.icon}</span>
               <span>{lang === 'ta' ? cat.nameTa : cat.name}</span>
@@ -481,6 +511,7 @@ export default function App() {
           <Route path="/" element={
             <WholesaleHomePage
               products={products}
+              categories={storeCategories}
               lang={lang}
               customerType={customerType}
               setCustomerType={setCustomerType}
@@ -504,6 +535,7 @@ export default function App() {
           <Route path="/category/:slug" element={
             <CatalogCategoryPage
               products={products}
+              categories={storeCategories}
               cart={cart}
               customerType={customerType}
               wishlist={wishlist}
@@ -519,6 +551,7 @@ export default function App() {
           <Route path="/categories" element={
             <CategoryPage
               products={products}
+              categories={storeCategories}
               customerType={customerType}
               wishlist={wishlist}
               toggleWishlist={toggleWishlist}
@@ -1728,9 +1761,10 @@ function ProductCard({
    IMAGE 1 & IMAGE 2: TWO-PANE CATEGORY BROWSER
    ========================================================================== */
 function CategoryPage({
-  products, customerType, wishlist, toggleWishlist, addToCart, cart, updateCartQty, openCartDrawer, lang = 'en'
+  products, categories: storeCategories, customerType, wishlist, toggleWishlist, addToCart, cart, updateCartQty, openCartDrawer, lang = 'en'
 }: {
   products: Product[]
+  categories: StationeryCategory[]
   customerType: CustomerType
   wishlist: number[]
   toggleWishlist: (id: number) => void
@@ -1744,7 +1778,7 @@ function CategoryPage({
   const navigate = useNavigate()
   
   // Find active category or default to first category (Xerox & Printing)
-  const activeCategory = categories.find(c => c.slug === slug) || categories[0]
+  const activeCategory = storeCategories.find(c => c.slug === slug) || storeCategories[0] || categories[0]
   const [activeSubcat, setActiveSubcat] = useState<string>('all')
 
   // Reset active subcategory when category changes
@@ -1796,7 +1830,7 @@ function CategoryPage({
                 setActiveSubcat('all')
               }}
             >
-              {categories.map(c => (
+              {storeCategories.map(c => (
                 <option key={c.slug} value={c.slug}>
                   {c.icon} {lang === 'ta' ? c.nameTa : c.name}
                 </option>
@@ -1842,7 +1876,7 @@ function CategoryPage({
               {t[lang].otherSectors}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              {categories.filter(c => c.slug !== activeCategory.slug).slice(0, 4).map(c => (
+              {storeCategories.filter(c => c.slug !== activeCategory.slug).slice(0, 4).map(c => (
                 <button
                   key={c.slug}
                   type="button"

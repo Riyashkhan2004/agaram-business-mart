@@ -45,10 +45,26 @@ CREATE TABLE IF NOT EXISTS user_sessions (
 CREATE INDEX IF NOT EXISTS user_sessions_user_expiry_idx ON user_sessions (user_id, expires_at) WHERE user_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS user_sessions_admin_expiry_idx ON user_sessions (admin_email, expires_at) WHERE admin_email IS NOT NULL;
 
+CREATE TABLE IF NOT EXISTS user_addresses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name VARCHAR(120) NOT NULL,
+  phone VARCHAR(16) NOT NULL,
+  address TEXT NOT NULL,
+  city VARCHAR(100) NOT NULL,
+  pincode VARCHAR(6) NOT NULL,
+  is_default BOOLEAN NOT NULL DEFAULT FALSE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS user_addresses_owner_expiry_idx ON user_addresses(user_id, expires_at DESC);
+
 CREATE TABLE IF NOT EXISTS products (
   id INTEGER PRIMARY KEY,
   name VARCHAR(180) NOT NULL,
   category VARCHAR(80) NOT NULL,
+  subcategory VARCHAR(100),
   business VARCHAR(24) NOT NULL CHECK (business IN ('stationery', 'cctv', 'furniture')),
   brand VARCHAR(100) NOT NULL DEFAULT '',
   price NUMERIC(12,2) NOT NULL CHECK (price >= 0),
@@ -69,6 +85,19 @@ CREATE TABLE IF NOT EXISTS products (
 
 ALTER TABLE products ADD COLUMN IF NOT EXISTS gallery JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS tiers JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS subcategory VARCHAR(100);
+
+CREATE TABLE IF NOT EXISTS storefront_categories (
+  slug VARCHAR(80) PRIMARY KEY,
+  name VARCHAR(120) NOT NULL,
+  name_ta VARCHAR(120) NOT NULL DEFAULT '',
+  icon VARCHAR(24) NOT NULL DEFAULT '📦',
+  image TEXT,
+  tagline VARCHAR(300) NOT NULL DEFAULT '',
+  badge VARCHAR(80),
+  subcategories JSONB NOT NULL DEFAULT '[]'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 CREATE INDEX IF NOT EXISTS products_category_active_idx ON products (category, active);
 CREATE INDEX IF NOT EXISTS products_business_active_idx ON products (business, active);

@@ -23,8 +23,9 @@ import {
   Copy,
   Check
 } from 'lucide-react'
-import { fetchUserOrders, customerLogin, signUp, logout, ApiOrder } from '../api'
+import { fetchUserOrders, fetchUserAddresses, saveUserAddressesRemote, customerLogin, signUp, logout, ApiOrder } from '../api'
 import { Product, Language, t, money, unitPrice, CustomerType } from '../data/products'
+import { loadSavedAddresses, saveUserAddresses, type SavedAddress } from '../utils/savedAddresses'
 
 interface AccountPageProps {
   currentUser: { id?: string; name?: string; email?: string; phone?: string } | null
@@ -82,25 +83,10 @@ export const AccountPage: React.FC<AccountPageProps> = ({
   const [ordersLoading, setOrdersLoading] = useState(false)
 
   // Saved addresses
-  const [savedAddresses, setSavedAddresses] = useState<
-    Array<{ id: string; name: string; phone: string; address: string; city: string; pincode: string; isDefault: boolean }>
-  >(() => {
-    try {
-      const stored = localStorage.getItem('abm_saved_addresses')
-      if (stored) return JSON.parse(stored)
-    } catch {}
-    return [
-      {
-        id: 'addr-1',
-        name: currentUser?.name || 'Primary Contact',
-        phone: currentUser?.phone || '9876543210',
-        address: 'No. 14, Main Road, Near Municipal Office',
-        city: 'Cuddalore',
-        pincode: '607001',
-        isDefault: true
-      }
-    ]
-  })
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>(() => loadSavedAddresses(currentUser?.id).addresses)
+  const [savedAddressExpiry, setSavedAddressExpiry] = useState<number>(() => loadSavedAddresses(currentUser?.id).expiresAt)
+  const [savedAddressOwnerId, setSavedAddressOwnerId] = useState<string | undefined>(currentUser?.id)
+  const accountAddresses = savedAddressOwnerId === currentUser?.id ? savedAddresses : []
 
   // New address form
   const [showNewAddressModal, setShowNewAddressModal] = useState(false)
@@ -131,6 +117,39 @@ export const AccountPage: React.FC<AccountPageProps> = ({
       })
     return () => { cancelled = true }
   }, [currentUser])
+
+  useEffect(() => {
+    let cancelled = false
+    const applyAddresses = (addresses: SavedAddress[], expiresAt: number) => {
+      if (cancelled) return
+      setSavedAddresses(addresses)
+      setSavedAddressExpiry(expiresAt)
+      setSavedAddressOwnerId(currentUser?.id)
+    }
+    if (!currentUser?.id) {
+      applyAddresses([], 0)
+    } else {
+      fetchUserAddresses().then(remote => {
+        const valid = remote.filter(item => Date.parse(item.expiresAt) > Date.now())
+        applyAddresses(valid, valid.length ? Math.min(...valid.map(item => Date.parse(item.expiresAt))) : 0)
+      }).catch(() => {
+        const local = loadSavedAddresses(currentUser.id)
+        applyAddresses(local.addresses, local.expiresAt)
+      })
+    }
+    return () => { cancelled = true }
+  }, [currentUser?.id])
+
+  useEffect(() => {
+    if (!currentUser?.id || !savedAddressExpiry) return
+    const delay = Math.max(0, savedAddressExpiry - Date.now())
+    const timer = window.setTimeout(() => {
+      setSavedAddresses([])
+      setSavedAddressExpiry(0)
+      localStorage.removeItem(`abm_saved_addresses_${encodeURIComponent(currentUser.id!)}`)
+    }, delay)
+    return () => window.clearTimeout(timer)
+  }, [currentUser?.id, savedAddressExpiry])
 
   const setTab = (tab: TabKey) => {
     setSearchParams({ tab })
@@ -173,9 +192,9 @@ export const AccountPage: React.FC<AccountPageProps> = ({
     setTimeout(() => setCopiedCode(null), 2000)
   }
 
-  const handleAddAddress = (e: FormEvent) => {
+  const handleAddAddress = async (e: FormEvent) => {
     e.preventDefault()
-    if (!newAddrName || !newAddrStreet || !newAddrPincode) return
+    if (!currentUser?.id || !newAddrName.trim() || !newAddrStreet.trim() || !newAddrPincode.trim()) return
     const newAddr = {
       id: `addr-${Date.now()}`,
       name: newAddrName,
@@ -183,21 +202,32 @@ export const AccountPage: React.FC<AccountPageProps> = ({
       address: newAddrStreet,
       city: newAddrCity || 'Cuddalore',
       pincode: newAddrPincode,
-      isDefault: savedAddresses.length === 0
+      isDefault: true
     }
-    const updated = [...savedAddresses, newAddr]
+    const updated = [newAddr, ...accountAddresses.map(address => ({ ...address, isDefault: false }))]
     setSavedAddresses(updated)
-    localStorage.setItem('abm_saved_addresses', JSON.stringify(updated))
+    setSavedAddressExpiry(saveUserAddresses(currentUser.id, updated))
+    try {
+      const remote = await saveUserAddressesRemote(updated)
+      setSavedAddresses(remote)
+      setSavedAddressExpiry(remote.length ? Math.min(...remote.map(item => Date.parse(item.expiresAt))) : 0)
+    } catch {}
     setShowNewAddressModal(false)
     setNewAddrName('')
     setNewAddrPhone('')
     setNewAddrStreet('')
   }
 
-  const handleDeleteAddress = (id: string) => {
-    const updated = savedAddresses.filter(a => a.id !== id)
+  const handleDeleteAddress = async (id: string) => {
+    const updated = accountAddresses.filter(a => a.id !== id)
     setSavedAddresses(updated)
-    localStorage.setItem('abm_saved_addresses', JSON.stringify(updated))
+    setSavedAddressExpiry(updated.length ? saveUserAddresses(currentUser?.id, updated) : 0)
+    if (!updated.length && currentUser?.id) localStorage.removeItem(`abm_saved_addresses_${encodeURIComponent(currentUser.id)}`)
+    try {
+      const remote = await saveUserAddressesRemote(updated)
+      setSavedAddresses(remote)
+      setSavedAddressExpiry(remote.length ? Math.min(...remote.map(item => Date.parse(item.expiresAt))) : 0)
+    } catch {}
   }
 
   // Wishlist items
@@ -1156,7 +1186,9 @@ export const AccountPage: React.FC<AccountPageProps> = ({
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
                 <div>
                   <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: 0 }}>Saved Delivery Addresses</h2>
-                  <p style={{ fontSize: '12.5px', color: '#64748b', margin: '2px 0 0' }}>Manage delivery locations for quick ordering</p>
+                  <p style={{ fontSize: '12.5px', color: '#64748b', margin: '2px 0 0' }}>
+                    Saved only for this account and removed after one hour{savedAddressExpiry > Date.now() ? ` · expires ${new Date(savedAddressExpiry).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}
+                  </p>
                 </div>
                 <button
                   onClick={() => setShowNewAddressModal(true)}
@@ -1168,7 +1200,12 @@ export const AccountPage: React.FC<AccountPageProps> = ({
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {savedAddresses.map(addr => (
+                {accountAddresses.length === 0 && (
+                  <div style={{ background: '#fff', border: '1px dashed #cbd5e1', borderRadius: '14px', padding: '24px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+                    No saved addresses yet. Add one and it will stay linked to this account for one hour.
+                  </div>
+                )}
+                {accountAddresses.map(addr => (
                   <div
                     key={addr.id}
                     style={{

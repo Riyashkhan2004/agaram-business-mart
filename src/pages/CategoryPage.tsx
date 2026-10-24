@@ -1,11 +1,12 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ProductCard } from '../components/ProductCard'
 import { ProductPreviewModal } from '../components/ProductPreviewModal'
-import { categories, type CategorySlug, type Product } from '../data/products'
+import { categories as defaultCategories, type StationeryCategory, type Product } from '../data/products'
 
 interface CategoryPageProps {
   products: Product[]
+  categories?: StationeryCategory[]
   cart: { productId: number; quantity: number }[]
   wishlist: number[]
   onAddToCart: (id: number, qty?: number) => void
@@ -17,6 +18,7 @@ interface CategoryPageProps {
 
 export function CategoryPage({
   products,
+  categories = defaultCategories,
   cart,
   wishlist,
   onAddToCart,
@@ -29,7 +31,9 @@ export function CategoryPage({
   const [selectedSub, setSelectedSub] = useState<string>('all')
   const [previewProduct, setPreviewProduct] = useState<Product | null>(null)
 
-  const currentCategory = categories.find(c => c.slug === slug) || categories[0]
+  useEffect(() => setSelectedSub('all'), [slug])
+
+  const currentCategory = categories.find(c => c.slug === slug) || categories[0] || defaultCategories[0]
 
   const cartQtyMap = useMemo(() => {
     const map = new Map<number, number>()
@@ -40,10 +44,7 @@ export function CategoryPage({
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
       if (p.category !== currentCategory.slug) return false
-      if (selectedSub !== 'all' && (p as any).subcategory) {
-        return (p as any).subcategory === selectedSub
-      }
-      return true
+      return selectedSub === 'all' || p.subcategory === selectedSub
     })
   }, [products, currentCategory.slug, selectedSub])
 
