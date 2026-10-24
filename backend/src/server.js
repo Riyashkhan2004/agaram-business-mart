@@ -49,7 +49,9 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
 }))
-app.use(express.json({ limit: '15mb' }))
+// A five-image product gallery can approach 18 MB because the primary image
+// is sent both as `image` and as the first item in `gallery`.
+app.use(express.json({ limit: '25mb' }))
 
 app.use('/api', (req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(204)
@@ -724,6 +726,12 @@ app.get('/api/admin/stats', authorize('admin'), async (_req, res) => {
 app.use((err, _req, res, _next) => {
   if (production) console.error('API request failed', { code: err?.code || 'internal' })
   else console.error(err)
+  if (err?.type === 'entity.too.large' || err?.status === 413) {
+    return res.status(413).json({ error: 'Product images are too large. Reduce image sizes or upload fewer images.' })
+  }
+  if (err?.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'The request data could not be read. Please retry.' })
+  }
   res.status(500).json({ error: 'Unexpected server error' })
 })
 
