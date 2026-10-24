@@ -723,16 +723,40 @@ app.get('/api/admin/stats', authorize('admin'), async (_req, res) => {
   })
 })
 
-app.use((err, _req, res, _next) => {
-  if (production) console.error('API request failed', { code: err?.code || 'internal' })
-  else console.error(err)
+app.use((err, req, res, _next) => {
+  const reference = randomUUID()
+  if (production) {
+    console.error('API request failed', {
+      reference,
+      method: req.method,
+      path: req.path,
+      code: err?.code || 'internal',
+      column: err?.column,
+      constraint: err?.constraint,
+      table: err?.table,
+    })
+  } else console.error(err)
   if (err?.type === 'entity.too.large' || err?.status === 413) {
     return res.status(413).json({ error: 'Product images are too large. Reduce image sizes or upload fewer images.' })
   }
   if (err?.type === 'entity.parse.failed') {
     return res.status(400).json({ error: 'The request data could not be read. Please retry.' })
   }
-  res.status(500).json({ error: 'Unexpected server error' })
+  const databaseErrors = {
+    '22001': [400, 'A product field is too long. Shorten it and try again.'],
+    '22003': [400, 'A price, stock, or tax value is outside the supported range.'],
+    '22P02': [400, 'A numeric product field is invalid. Check the price, stock, and tax values.'],
+    '23502': [400, 'A required product field is missing. Check the product details and try again.'],
+    '23514': [400, 'Some product details are not allowed. Check the business type, prices, stock, and tax.'],
+    '42703': [503, 'The product database needs a schema update. Contact support with the reference below.'],
+    '42P01': [503, 'The product database needs a schema update. Contact support with the reference below.'],
+  }
+  const dbError = databaseErrors[err?.code]
+  if (dbError) return res.status(dbError[0]).json({ error: dbError[1], reference })
+  if (typeof err?.code === 'string' && err.code.startsWith('08')) {
+    return res.status(503).json({ error: 'The database connection is temporarily unavailable. Please retry shortly.', reference })
+  }
+  res.status(500).json({ error: 'Unexpected server error', reference })
 })
 
 const port = Number(process.env.PORT || 4000)

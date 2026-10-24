@@ -69,7 +69,8 @@ async function request<T>(route: string, options: RequestInit = {}): Promise<T> 
       ...Object.entries(fieldErrors || {}).flatMap(([field, messages]) => messages.map(message => `${field}: ${message}`)),
     ]
     const detail = validationMessages.length ? ` — ${validationMessages.join('; ')}` : ''
-    throw new Error(`${body.error || `Request failed (${response.status})`}${detail}`)
+    const reference = body.reference ? ` (Reference ${body.reference})` : ''
+    throw new Error(`${body.error || `Request failed (${response.status})`}${detail}${reference}`)
   }
   return body as T
 }
