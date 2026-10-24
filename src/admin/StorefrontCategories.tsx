@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ImagePlus, Plus, Save } from 'lucide-react'
 import type { StationeryCategory } from '../data/products'
 
 type Props = {
   categories: StationeryCategory[]
   saving: boolean
-  onSave: (categories: StationeryCategory[]) => Promise<void>
+  onSave: (categories: StationeryCategory[]) => Promise<boolean>
 }
 
 const slugify = (value: string) => value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
@@ -15,8 +15,12 @@ export function StorefrontCategories({ categories, saving, onSave }: Props) {
   const [selectedSlug, setSelectedSlug] = useState(categories[0]?.slug || '')
   const [newCategorySlugs, setNewCategorySlugs] = useState<Set<string>>(() => new Set())
   const [error, setError] = useState('')
+  const lastServerSnapshot = useRef(JSON.stringify(categories))
 
   useEffect(() => {
+    const incoming = JSON.stringify(categories)
+    if (incoming === lastServerSnapshot.current) return
+    lastServerSnapshot.current = incoming
     setDrafts(categories)
     if (!selectedSlug && categories[0]) setSelectedSlug(categories[0].slug)
   }, [categories])
@@ -74,8 +78,8 @@ export function StorefrontCategories({ categories, saving, onSave }: Props) {
       seen.add(slug)
     }
     setError('')
-    await onSave(drafts.map(item => ({ ...item, slug: slugify(item.slug), name: item.name.trim() })))
-    setNewCategorySlugs(new Set())
+    const saved = await onSave(drafts.map(item => ({ ...item, slug: slugify(item.slug), name: item.name.trim() })))
+    if (saved) setNewCategorySlugs(new Set())
   }
 
   return (

@@ -57,6 +57,7 @@ async function request<T>(route: string, options: RequestInit = {}): Promise<T> 
 
   const response = await fetch(url, {
     ...options,
+    cache: options.cache || 'no-store',
     credentials: 'include',
     headers,
   })

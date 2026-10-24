@@ -66,8 +66,11 @@ export function AdminApp() {
   const [adminEmail, setAdminEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loginError, setLoginError] = useState('')
-  const [currentTab, setCurrentTab] = useState<AdminTab>('dashboard')
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const [currentTab, setCurrentTab] = useState<AdminTab>(() => {
+    const saved = localStorage.getItem('abm_admin_last_tab') as AdminTab | null
+    return saved && ['dashboard', 'products', 'storefront', 'orders', 'customers', 'database'].includes(saved) ? saved : 'dashboard'
+  })
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => localStorage.getItem('abm_admin_theme') === 'light' ? 'light' : 'dark')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   // Real-time Data
@@ -124,7 +127,12 @@ export function AdminApp() {
   // Theme Sync
   useEffect(() => {
     document.documentElement.setAttribute('data-admin-theme', theme)
+    localStorage.setItem('abm_admin_theme', theme)
   }, [theme])
+
+  useEffect(() => {
+    localStorage.setItem('abm_admin_last_tab', currentTab)
+  }, [currentTab])
 
   // Check initial session
   useEffect(() => {
@@ -141,7 +149,7 @@ export function AdminApp() {
     try {
       const [prods, cats, ords, usrs, st] = await Promise.all([
         fetchAdminProducts(),
-        fetchAdminCategories().catch(() => []),
+        fetchAdminCategories(),
         fetchAdminOrders().catch(() => []),
         fetchAdminUsers().catch(() => []),
         fetchAdminStats().catch(() => null)
@@ -169,8 +177,10 @@ export function AdminApp() {
       localStorage.setItem('abm_categories_refresh', String(Date.now()))
       setStatusMessage('Store categories saved and published.')
       window.setTimeout(() => setStatusMessage(''), 4000)
+      return true
     } catch (err) {
       setStatusMessage(`Could not save categories: ${err instanceof Error ? err.message : 'Please try again.'}`)
+      return false
     } finally {
       setSavingCategories(false)
     }
@@ -354,7 +364,20 @@ export function AdminApp() {
     for (let index = 0; index < excelProducts.length; index += 1) {
       const product = excelProducts[index]
       try {
-        const response = await createProduct(product)
+        const existing = products.find(item => item.sku.trim().toLowerCase() === product.sku.trim().toLowerCase())
+        const response = existing
+          ? await saveProduct({
+              ...existing,
+              ...product,
+              id: existing.id,
+              nameTa: existing.nameTa,
+              rating: existing.rating,
+              reviewCount: existing.reviewCount,
+              tiers: existing.tiers,
+              specs: existing.specs,
+              colors: existing.colors,
+            })
+          : await createProduct(product)
         created.push(response.product)
       } catch (error) {
         failedProducts.push(product)
@@ -367,7 +390,7 @@ export function AdminApp() {
       window.dispatchEvent(new CustomEvent('abm_products_updated'))
       localStorage.setItem('abm_products_refresh', String(Date.now()))
       void refreshAllData()
-      setStatusMessage(`${created.length} product${created.length === 1 ? '' : 's'} added from the spreadsheet.`)
+      setStatusMessage(`${created.length} product${created.length === 1 ? '' : 's'} added or updated from the spreadsheet.`)
       window.setTimeout(() => setStatusMessage(''), 5000)
     }
     setExcelProducts(failedProducts)
@@ -1285,9 +1308,12 @@ export function AdminApp() {
                   </div>
                   <input ref={excelFileInputRef} type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden onChange={e => handleReadProductSpreadsheet(e.target.files?.[0])} />
                   <button type="button" disabled={excelReading || excelSaving} onClick={() => excelFileInputRef.current?.click()} className="admin-btn admin-btn-secondary" style={{ marginTop: '12px', minHeight: '40px' }}><Upload size={14} /> {excelReading ? 'Reading spreadsheet…' : 'Choose Excel or CSV file'}</button>
-                  {excelProducts.length > 0 && <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--admin-text)' }}>{excelProducts.length} valid product rows ready{excelSaving ? ` · Saving ${excelProgress} of ${excelProducts.length}` : ''}</div>}
+                  {excelProducts.length > 0 && <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--admin-text)' }}>
+                    {excelProducts.length} valid rows ready · {excelProducts.filter(product => products.some(existing => existing.sku.trim().toLowerCase() === product.sku.trim().toLowerCase())).length} will update by SKU · {excelProducts.filter(product => !products.some(existing => existing.sku.trim().toLowerCase() === product.sku.trim().toLowerCase())).length} new
+                    {excelSaving ? ` · Saving ${excelProgress} of ${excelProducts.length}` : ''}
+                  </div>}
                   {excelErrors.length > 0 && <div role="alert" style={{ marginTop: '9px', color: '#b42318', fontSize: '11px', maxHeight: '120px', overflow: 'auto' }}>{excelErrors.map((error, index) => <div key={`${index}-${error}`}>{error}</div>)}</div>}
-                  {excelProducts.length > 0 && <button type="button" disabled={excelSaving} onClick={handleImportSpreadsheetProducts} className="admin-btn admin-btn-primary" style={{ marginTop: '10px', minHeight: '40px' }}>{excelSaving ? `Adding ${excelProgress}/${excelProducts.length}…` : `Add ${excelProducts.length} products`}</button>}
+                  {excelProducts.length > 0 && <button type="button" disabled={excelSaving} onClick={handleImportSpreadsheetProducts} className="admin-btn admin-btn-primary" style={{ marginTop: '10px', minHeight: '40px' }}>{excelSaving ? `Saving ${excelProgress}/${excelProducts.length}…` : `Add or update ${excelProducts.length} products`}</button>}
                 </section>
                 <div className="admin-form-group">
                     <label>SKU (Stock Keeping Unit)</label>
