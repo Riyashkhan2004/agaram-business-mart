@@ -152,35 +152,29 @@ export function AdminApp() {
   const refreshAllData = async () => {
     setLoading(true)
     setOrdersLoadError('')
-    try {
-      let orderError = ''
-      const [prods, cats, ords, usrs, st] = await Promise.all([
+    const [productsResult, categoriesResult, ordersResult, usersResult, statsResult] = await Promise.allSettled([
         fetchAdminProducts().catch(() => fetchProducts()),
         fetchAdminCategories().catch(() => fetchStoreCategories()),
-        fetchAdminOrders().catch(err => {
-          orderError = err instanceof Error ? err.message : 'Orders could not be loaded.'
-          return []
-        }),
+        fetchAdminOrders(),
         fetchAdminUsers().catch(() => []),
         fetchAdminStats().catch(() => null)
-      ])
-      if (prods && prods.length > 0) {
-        setProducts(prods)
-        setDbConnected(true)
-      } else {
-        setDbConnected(false)
-      }
-      setStoreCategories(mergeStoreCategories(cats || []))
-      setOrders(ords || [])
-      setOrdersLoadError(orderError)
-      setUsers(usrs || [])
-      setStats(st)
-    } catch (err) {
-      console.error('Failed to refresh data:', err)
-      setDbConnected(false)
-    } finally {
-      setLoading(false)
+    ])
+    const prods = productsResult.status === 'fulfilled' ? productsResult.value : []
+    const cats = categoriesResult.status === 'fulfilled' ? categoriesResult.value : []
+    const ords = ordersResult.status === 'fulfilled' ? ordersResult.value : []
+    const usrs = usersResult.status === 'fulfilled' ? usersResult.value : []
+    const st = statsResult.status === 'fulfilled' ? statsResult.value : null
+
+    setProducts(prods)
+    setDbConnected(productsResult.status === 'fulfilled')
+    setStoreCategories(mergeStoreCategories(cats))
+    setOrders(ords)
+    if (ordersResult.status === 'rejected') {
+      setOrdersLoadError(ordersResult.reason instanceof Error ? ordersResult.reason.message : 'Orders could not be loaded.')
     }
+    setUsers(usrs)
+    setStats(st)
+    setLoading(false)
   }
 
   const handleSaveCategories = async (nextCategories: StationeryCategory[]) => {
