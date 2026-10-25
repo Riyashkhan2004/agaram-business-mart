@@ -36,10 +36,6 @@ export const pool = new Pool({
   idle_in_transaction_session_timeout: 15000,
 })
 
-pool.on('connect', (client) => {
-  client.query('SET search_path TO public;').catch(() => {})
-})
-
 pool.on('error', (err) => {
   console.error('Unexpected pg-pool error:', err.message)
 })
