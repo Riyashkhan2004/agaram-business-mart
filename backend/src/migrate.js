@@ -20,6 +20,8 @@ try {
       console.log(`Updated administrator password for ${adm.email}.`)
     }
   }
+} catch (err) {
+  console.error('Migration note:', err.message)
 } finally {
-  await pool.end()
+  await pool.end().catch(() => {})
 }

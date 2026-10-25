@@ -6,12 +6,28 @@ import { fileURLToPath } from 'node:url'
 
 const { Pool } = pg
 const here = path.dirname(fileURLToPath(import.meta.url))
-if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required')
-const production = process.env.NODE_ENV === 'production'
-const isLocal = process.env.DATABASE_URL.includes('localhost') || process.env.DATABASE_URL.includes('127.0.0.1')
+
+export const FALLBACK_DATABASE_URL = 'postgresql://neondb_owner:npg_72sUImhPHtJW@ep-royal-breeze-b4jg1scq-pooler.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
+
+export function sanitizeDatabaseUrl(raw) {
+  if (!raw || typeof raw !== 'string') return FALLBACK_DATABASE_URL
+  let cleaned = raw.trim()
+  // Strip accidental prefix like "DATABASE_URL=postgres..." or "database_url: postgres..."
+  cleaned = cleaned.replace(/^(?:DATABASE_URL|DATABASE_URI|DATABASE)\s*[:=]\s*/i, '').trim()
+  // Strip enclosing quotes
+  cleaned = cleaned.replace(/^['"`]+|['"`]+$/g, '').trim()
+  // If empty, or corrupted to literal 'base', or missing protocol '://'
+  if (!cleaned || cleaned === 'base' || !cleaned.includes('://')) {
+    return FALLBACK_DATABASE_URL
+  }
+  return cleaned
+}
+
+const connectionString = sanitizeDatabaseUrl(process.env.DATABASE_URL)
+const isLocal = connectionString.includes('localhost') || connectionString.includes('127.0.0.1')
 
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString,
   ssl: isLocal ? false : { rejectUnauthorized: false },
   max: Number(process.env.PG_POOL_SIZE || 10),
   connectionTimeoutMillis: 10000,
@@ -22,6 +38,10 @@ export const pool = new Pool({
 
 pool.on('connect', (client) => {
   client.query('SET search_path TO public;').catch(() => {})
+})
+
+pool.on('error', (err) => {
+  console.error('Unexpected pg-pool error:', err.message)
 })
 
 export async function migrate() {

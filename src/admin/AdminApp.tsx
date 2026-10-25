@@ -34,6 +34,8 @@ import {
 } from 'lucide-react'
 import {
   API_URL,
+  fetchProducts,
+  fetchStoreCategories,
   fetchAdminProducts,
   fetchAdminCategories,
   createProduct,
@@ -148,18 +150,22 @@ export function AdminApp() {
     setLoading(true)
     try {
       const [prods, cats, ords, usrs, st] = await Promise.all([
-        fetchAdminProducts(),
-        fetchAdminCategories(),
+        fetchAdminProducts().catch(() => fetchProducts()),
+        fetchAdminCategories().catch(() => fetchStoreCategories()),
         fetchAdminOrders().catch(() => []),
         fetchAdminUsers().catch(() => []),
         fetchAdminStats().catch(() => null)
       ])
-      setProducts(prods)
-      setStoreCategories(mergeStoreCategories(cats))
-      setOrders(ords)
-      setUsers(usrs)
+      if (prods && prods.length > 0) {
+        setProducts(prods)
+        setDbConnected(true)
+      } else {
+        setDbConnected(false)
+      }
+      setStoreCategories(mergeStoreCategories(cats || []))
+      setOrders(ords || [])
+      setUsers(usrs || [])
       setStats(st)
-      setDbConnected(true)
     } catch (err) {
       console.error('Failed to refresh data:', err)
       setDbConnected(false)
