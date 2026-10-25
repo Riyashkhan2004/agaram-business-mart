@@ -2460,6 +2460,7 @@ function CheckoutPage({
   const [couponError, setCouponError] = useState('')
   const [paymentMode, setPaymentMode] = useState<'upi' | 'card' | 'cod'>('upi')
   const [placing, setPlacing] = useState(false)
+  const [orderError, setOrderError] = useState('')
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([])
   const [addressPickerOpen, setAddressPickerOpen] = useState(false)
   const [mapAddressPickerOpen, setMapAddressPickerOpen] = useState(false)
@@ -2577,6 +2578,7 @@ function CheckoutPage({
 
   const handlePlaceOrder = async (e: FormEvent) => {
     e.preventDefault()
+    setOrderError('')
     if (!currentUser) {
       alert(lang === 'ta' ? 'ஆர்டர் செய்ய தயவுசெய்து உள்நுழையவும் அல்லது கணக்கு தொடங்கவும்.' : 'Please sign in or create an account to place your order.')
       return
@@ -2612,33 +2614,8 @@ function CheckoutPage({
       notifyCoinBalanceChanged()
       clearCart()
       navigate(`/invoice/${res.order.id}`)
-    } catch {
-      // Fallback local order
-      const localId = `ABM-${Date.now().toString().slice(-6)}`
-      const localOrder: ApiOrder = {
-        id: localId,
-        userId: currentUser?.id,
-        date: new Date().toLocaleDateString('en-IN'),
-        items: cart,
-        total: grandTotal,
-        subtotal,
-        tax: Math.round(subtotal * 0.18),
-        discount,
-        customerType,
-        coinsEarned: Math.floor(grandTotal / 100),
-        customerName: name,
-        email,
-        phone,
-        address,
-        city,
-        pincode,
-        gstin,
-      }
-      const existing = readStorage<ApiOrder[]>('abm_orders', []).filter(order => order.id !== localId)
-      localStorage.setItem('abm_orders', JSON.stringify([localOrder, ...existing]))
-      notifyCoinBalanceChanged()
-      clearCart()
-      navigate(`/invoice/${localId}`)
+    } catch (err) {
+      setOrderError(err instanceof Error ? err.message : 'Your order could not be saved. Please try again.')
     } finally {
       setPlacing(false)
     }
@@ -2925,6 +2902,13 @@ function CheckoutPage({
           </div>
 
           {currentUser ? (
+            <>
+            {orderError && (
+              <div role="alert" style={{ display: 'flex', gap: '9px', alignItems: 'flex-start', padding: '12px', marginBottom: '12px', background: '#fff1f2', border: '1px solid #fecdd3', borderRadius: '10px', color: '#9f1239', fontSize: '12px', lineHeight: 1.5 }}>
+                <AlertCircle size={16} style={{ flex: '0 0 auto', marginTop: '1px' }} />
+                <span><b>Order not confirmed.</b> {orderError} Your cart is saved here—please retry in a moment.</span>
+              </div>
+            )}
             <button
               type="submit"
               form="checkout-order-form"
@@ -2934,6 +2918,7 @@ function CheckoutPage({
             >
               {placing ? (lang === 'ta' ? 'ஆர்டர் செய்யப்படுகிறது...' : 'Placing Order...') : (lang === 'ta' ? `ஆர்டர் செய்க · ${money(grandTotal)}` : `Place Order · ${money(grandTotal)}`)}
             </button>
+            </>
           ) : (
             <div style={{ textAlign: 'center', padding: '14px', background: 'var(--primary-light)', borderRadius: '12px', border: '1px dashed var(--primary-border)' }}>
               <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--primary)', marginBottom: '4px' }}>

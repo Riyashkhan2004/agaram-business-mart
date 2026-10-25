@@ -675,9 +675,9 @@ app.post('/api/orders', async (req, res) => {
       await client.query(`INSERT INTO order_items(order_id,product_id,product_name,sku,quantity,unit_price,gst_rate)
         VALUES($1,$2,$3,$4,$5,$6,$7)`, [order.id, line.product.id, line.product.name, line.product.sku, line.item.quantity, line.unitCents/100, line.product.gst])
     }
+    const itemRows = await client.query('SELECT * FROM order_items WHERE order_id=$1 ORDER BY id', [order.id])
     await client.query('COMMIT')
 
-    const itemRows = await pool.query('SELECT * FROM order_items WHERE order_id=$1 ORDER BY id', [order.id])
     res.status(201).json({ order: camelOrder(order, itemRows.rows) })
   } catch (error) {
     if (client) await client.query('ROLLBACK').catch(() => {})
