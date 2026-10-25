@@ -819,6 +819,9 @@ app.use((err, req, res, _next) => {
       method: req.method,
       path: req.path,
       code: err?.code || 'internal',
+      ...(typeof err?.code === 'string' && err.code.startsWith('53')
+        ? { message: err.message, severity: err.severity }
+        : {}),
       column: err?.column,
       constraint: err?.constraint,
       table: err?.table,
@@ -843,6 +846,9 @@ app.use((err, req, res, _next) => {
   if (dbError) return res.status(dbError[0]).json({ error: dbError[1], reference })
   if (typeof err?.code === 'string' && err.code.startsWith('08')) {
     return res.status(503).json({ error: 'The database connection is temporarily unavailable. Please retry shortly.', reference })
+  }
+  if (typeof err?.code === 'string' && err.code.startsWith('53')) {
+    return res.status(503).json({ error: 'The database is temporarily unable to process requests. Please try again shortly.', reference })
   }
   res.status(500).json({ error: 'Unexpected server error', reference })
 })
