@@ -6,6 +6,14 @@ import { migrate, pool } from './db.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const products = JSON.parse(await fs.readFile(path.join(here, '..', 'data', 'products.json'), 'utf8'))
+
+const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RENDER_SERVICE_ID)
+if (isProduction && process.env.ALLOW_PRODUCTION_SEED !== 'true') {
+  console.log('Skipping db:seed in production to preserve the live product catalogue. Set ALLOW_PRODUCTION_SEED=true only for intentional initialization.')
+  await pool.end()
+  process.exit(0)
+}
+
 try {
   await migrate()
   const client = await pool.connect()

@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: agaram-business-mart
+    runtime: node
+    rootDir: backend
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: FRONTEND_ORIGIN
+        value: https://agaram-business-mart.netlify.app
+      - key: PUBLIC_FRONTEND_URL
+        value: https://agaram-business-mart.netlify.app
+      - key: DATABASE_URL
+        sync: false

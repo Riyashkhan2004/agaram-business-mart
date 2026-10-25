@@ -1,3 +1,6 @@
+CREATE SCHEMA IF NOT EXISTS public;
+SET search_path TO public;
+
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   phone VARCHAR(16) UNIQUE,

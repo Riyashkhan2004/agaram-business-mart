@@ -20,9 +20,19 @@ export const pool = new Pool({
   idle_in_transaction_session_timeout: 15000,
 })
 
+pool.on('connect', (client) => {
+  client.query('SET search_path TO public;').catch(() => {})
+})
+
 export async function migrate() {
-  const schema = await fs.readFile(path.join(here, 'schema.sql'), 'utf8')
-  await pool.query(schema)
+  const client = await pool.connect()
+  try {
+    await client.query('CREATE SCHEMA IF NOT EXISTS public; SET search_path TO public;')
+    const schema = await fs.readFile(path.join(here, 'schema.sql'), 'utf8')
+    await client.query(schema)
+  } finally {
+    client.release()
+  }
 }
 
 export function camelProduct(row) {
