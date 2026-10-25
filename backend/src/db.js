@@ -68,7 +68,7 @@ export function camelProduct(row) {
 
 export function camelOrder(row, items = []) {
   return {
-    id: row.order_no, userId: row.user_id, date: new Date(row.created_at).toLocaleDateString('en-IN'),
+    id: row.order_no, userId: row.user_id, date: new Date(row.created_at).toISOString(),
     items: items.map(item => ({ productId: Number(item.product_id), quantity: Number(item.quantity), name: item.product_name, sku: item.sku, price: Number(item.unit_price), gst: Number(item.gst_rate) })),
     total: Number(row.total), subtotal: Number(row.subtotal), tax: Number(row.tax), discount: 0,
     customerType: row.customer_type || 'retail', coinsEarned: Math.floor(Number(row.total) / 100),

@@ -7,7 +7,7 @@ export type ApiOrder = {
   id: string
   userId?: string
   date: string
-  items: { productId: number; quantity: number }[]
+  items: { productId: number; quantity: number; name?: string; sku?: string; price?: number; gst?: number }[]
   total: number
   subtotal: number
   tax: number

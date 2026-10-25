@@ -85,9 +85,11 @@ export function AdminApp() {
   const [stats, setStats] = useState<AdminStats | null>(null)
   const [loading, setLoading] = useState(false)
   const [dbConnected, setDbConnected] = useState<boolean | null>(null)
+  const [ordersLoadError, setOrdersLoadError] = useState('')
 
   // Modals & Filters
   const [productSearch, setProductSearch] = useState('')
+  const [orderSearch, setOrderSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [orderStatusFilter, setOrderStatusFilter] = useState('all')
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
@@ -149,11 +151,16 @@ export function AdminApp() {
   // Load all live data from Backend & Neon DB
   const refreshAllData = async () => {
     setLoading(true)
+    setOrdersLoadError('')
     try {
+      let orderError = ''
       const [prods, cats, ords, usrs, st] = await Promise.all([
         fetchAdminProducts().catch(() => fetchProducts()),
         fetchAdminCategories().catch(() => fetchStoreCategories()),
-        fetchAdminOrders().catch(() => []),
+        fetchAdminOrders().catch(err => {
+          orderError = err instanceof Error ? err.message : 'Orders could not be loaded.'
+          return []
+        }),
         fetchAdminUsers().catch(() => []),
         fetchAdminStats().catch(() => null)
       ])
@@ -165,6 +172,7 @@ export function AdminApp() {
       }
       setStoreCategories(mergeStoreCategories(cats || []))
       setOrders(ords || [])
+      setOrdersLoadError(orderError)
       setUsers(usrs || [])
       setStats(st)
     } catch (err) {
@@ -499,10 +507,13 @@ export function AdminApp() {
   // Filtered Orders
   const filteredOrders = useMemo(() => {
     return orders.filter(o => {
-      if (orderStatusFilter === 'all') return true
-      return (o as any).status === orderStatusFilter
+      const matchesStatus = orderStatusFilter === 'all' || (o.status || 'received') === orderStatusFilter
+      const query = orderSearch.trim().toLowerCase()
+      const matchesSearch = !query || [o.id, o.customerName, o.email, o.phone, o.address, o.city, o.pincode, ...o.items.map(item => item.name || item.sku || '')]
+        .some(value => String(value || '').toLowerCase().includes(query))
+      return matchesStatus && matchesSearch
     })
-  }, [orders, orderStatusFilter])
+  }, [orders, orderStatusFilter, orderSearch])
 
   // If Not Authenticated, Show Clean Admin Software Login Gate
   if (!auth) {
@@ -1100,14 +1111,45 @@ export function AdminApp() {
 
           {/* TAB 3: CUSTOMER ORDERS */}
           {currentTab === 'orders' && (
-            <div className="admin-table-container">
+            <div className="admin-orders-page">
+              <div className="admin-orders-summary">
+                {[
+                  { label: 'All orders', value: orders.length, tone: '#60a5fa' },
+                  { label: 'Needs attention', value: orders.filter(order => ['received', 'confirmed'].includes(order.status || 'received')).length, tone: '#fbbf24' },
+                  { label: 'In progress', value: orders.filter(order => ['packed', 'shipped'].includes(order.status || '')).length, tone: '#38bdf8' },
+                  { label: 'Delivered', value: orders.filter(order => order.status === 'delivered').length, tone: '#34d399' },
+                ].map(metric => (
+                  <div className="admin-orders-metric" key={metric.label}>
+                    <span>{metric.label}</span>
+                    <strong style={{ color: metric.tone }}>{metric.value}</strong>
+                  </div>
+                ))}
+              </div>
+              {ordersLoadError && (
+                <div className="admin-orders-error" role="alert">
+                  <AlertTriangle size={17} />
+                  <span>Orders could not be loaded: {ordersLoadError}. Use <b>Sync Live DB</b> to retry.</span>
+                </div>
+              )}
+              <div className="admin-table-container">
               <div className="admin-table-header">
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', flex: 1 }}>
+                  <div className="admin-table-search">
+                    <Search size={15} style={{ position: 'absolute', left: '12px', top: '10px', color: 'var(--admin-text-soft)' }} />
+                    <input
+                      type="search"
+                      value={orderSearch}
+                      onChange={e => setOrderSearch(e.target.value)}
+                      placeholder="Search order, customer, phone, address, item..."
+                      className="admin-input"
+                      aria-label="Search customer orders"
+                    />
+                  </div>
                   <select
                     value={orderStatusFilter}
                     onChange={e => setOrderStatusFilter(e.target.value)}
                     className="admin-input"
-                    style={{ width: 'auto' }}
+                    style={{ width: 'auto', paddingLeft: '12px', minHeight: '38px' }}
                   >
                     <option value="all">All Orders</option>
                     <option value="received">Received</option>
@@ -1119,7 +1161,7 @@ export function AdminApp() {
                   </select>
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--admin-text-soft)' }}>
-                  Total Orders: {filteredOrders.length}
+                  Showing {filteredOrders.length} of {orders.length} orders
                 </div>
               </div>
 
@@ -1130,9 +1172,9 @@ export function AdminApp() {
                       <th>Order ID</th>
                       <th>Date</th>
                       <th>Customer</th>
-                      <th>Address</th>
-                      <th>Items</th>
-                      <th>Total</th>
+                      <th>Delivery address</th>
+                      <th>Order items</th>
+                      <th style={{ textAlign: 'right' }}>Order total</th>
                       <th>Status</th>
                       <th style={{ textAlign: 'right' }}>Actions</th>
                     </tr>
@@ -1140,8 +1182,10 @@ export function AdminApp() {
                   <tbody>
                     {filteredOrders.length === 0 ? (
                       <tr>
-                        <td colSpan={8} style={{ textAlign: 'center', padding: '36px', color: 'var(--admin-text-soft)' }}>
-                          No customer orders matching the filter.
+                        <td colSpan={8} style={{ textAlign: 'center', padding: '44px 20px', color: 'var(--admin-text-soft)' }}>
+                          <Package size={28} style={{ display: 'block', margin: '0 auto 10px', opacity: 0.6 }} />
+                          <b style={{ display: 'block', color: 'var(--admin-text-main)', marginBottom: '4px' }}>{ordersLoadError ? 'Order list unavailable' : orders.length ? 'No matching orders' : 'No orders to show'}</b>
+                          {ordersLoadError ? 'Check the connection message above and retry the live database sync.' : orders.length ? 'Try a different search or status filter.' : 'New customer orders will appear here after they are placed.'}
                         </td>
                       </tr>
                     ) : (
@@ -1149,28 +1193,34 @@ export function AdminApp() {
                         <tr key={order.id}>
                           <td>
                             <b style={{ fontFamily: 'var(--admin-font-mono)' }}>#{order.id}</b>
+                            <div style={{ fontSize: '10px', color: 'var(--admin-text-soft)', marginTop: '3px' }}>{order.customerType === 'wholesale' ? 'Wholesale' : 'Retail'}</div>
                           </td>
                           <td style={{ fontSize: '11.5px', color: 'var(--admin-text-soft)' }}>
-                            {new Date(order.date).toLocaleDateString()}
+                            {new Date(order.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
                           </td>
                           <td>
                             <div style={{ fontWeight: 800 }}>{order.customerName}</div>
-                            <div style={{ fontSize: '11px', color: 'var(--admin-text-soft)' }}>{order.phone}</div>
+                            <div style={{ fontSize: '11px', color: 'var(--admin-text-soft)' }}>{order.phone || 'Phone not provided'}</div>
+                            {order.email && <div style={{ fontSize: '10px', color: 'var(--admin-text-soft)' }}>{order.email}</div>}
                           </td>
-                          <td style={{ fontSize: '11.5px', maxWidth: '200px' }}>
-                            {order.address}, {order.city} - {order.pincode}
+                          <td style={{ fontSize: '11.5px', maxWidth: '220px' }}>
+                            <div>{[order.address, order.city].filter(Boolean).join(', ') || 'Address not provided'}</div>
+                            {order.pincode && <div style={{ color: 'var(--admin-text-soft)', marginTop: '3px' }}>PIN {order.pincode}</div>}
                           </td>
                           <td>
-                            <b>{order.items.reduce((s, i) => s + i.quantity, 0)} units</b> ({order.items.length} items)
+                            <b>{order.items.reduce((s, i) => s + i.quantity, 0)} units</b> · {order.items.length} products
+                            <div style={{ fontSize: '10.5px', color: 'var(--admin-text-soft)', maxWidth: '190px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={order.items.map(item => item.name || `Product #${item.productId}`).join(', ')}>
+                              {order.items.map(item => item.name || `Product #${item.productId}`).join(', ') || 'No items listed'}
+                            </div>
                           </td>
-                          <td style={{ fontWeight: 800, color: 'var(--admin-primary)' }}>
+                          <td style={{ fontWeight: 800, color: 'var(--admin-primary)', textAlign: 'right', whiteSpace: 'nowrap' }}>
                             {money(order.total)}
                           </td>
                           <td>
                             <select
-                              value={(order as any).status || 'received'}
+                              value={order.status || 'received'}
                               onChange={e => handleUpdateOrderStatus(order.id, e.target.value)}
-                              className={`admin-status-pill status-${(order as any).status || 'received'}`}
+                              className={`admin-status-pill status-${order.status || 'received'}`}
                               style={{ border: 'none', cursor: 'pointer', outline: 'none' }}
                             >
                               <option value="received">Received</option>
@@ -1205,6 +1255,7 @@ export function AdminApp() {
                     )}
                   </tbody>
                 </table>
+              </div>
               </div>
             </div>
           )}
@@ -1852,7 +1903,7 @@ export function AdminApp() {
               <div>
                 <h3 style={{ fontSize: '16px', fontWeight: 800 }}>Order #{viewingOrder.id} Details</h3>
                 <div style={{ fontSize: '11.5px', color: 'var(--admin-text-soft)' }}>
-                  Placed on {new Date(viewingOrder.date).toLocaleString()}
+                  Placed on {new Date(viewingOrder.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
                 </div>
               </div>
               <button onClick={() => setViewingOrder(null)} style={{ background: 'none', border: 'none', color: 'var(--admin-text-soft)', cursor: 'pointer' }}>
@@ -1871,7 +1922,7 @@ export function AdminApp() {
                 <div style={{ background: 'var(--admin-bg)', padding: '12px', borderRadius: '8px' }}>
                   <div style={{ fontSize: '11px', color: 'var(--admin-text-soft)', textTransform: 'uppercase', fontWeight: 800 }}>Delivery Address</div>
                   <div style={{ fontSize: '12.5px', marginTop: '4px' }}>
-                    {viewingOrder.address}, {viewingOrder.city} - {viewingOrder.pincode}
+                    {[viewingOrder.address, viewingOrder.city, viewingOrder.pincode].filter(Boolean).join(', ') || 'Address not provided'}
                   </div>
                 </div>
               </div>
@@ -1894,10 +1945,10 @@ export function AdminApp() {
                         }}
                       >
                         <div>
-                          <b>{prod?.name || `Product #${it.productId}`}</b>
-                          <div style={{ fontSize: '11px', color: 'var(--admin-text-soft)' }}>Qty: {it.quantity}</div>
+                          <b>{it.name || prod?.name || `Product #${it.productId}`}</b>
+                          <div style={{ fontSize: '11px', color: 'var(--admin-text-soft)' }}>{it.sku && `SKU: ${it.sku} · `}Qty: {it.quantity} · Unit price: {money(it.price ?? prod?.price ?? 0)}</div>
                         </div>
-                        <div style={{ fontWeight: 800 }}>{money((prod?.price || 100) * it.quantity)}</div>
+                        <div style={{ fontWeight: 800 }}>{money((it.price ?? prod?.price ?? 0) * it.quantity)}</div>
                       </div>
                     )
                   })}
