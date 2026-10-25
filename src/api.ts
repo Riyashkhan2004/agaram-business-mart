@@ -170,7 +170,7 @@ export const saveAdminCategories = (categories: StationeryCategory[]) =>
 export const deleteAdminCategory = (slug: string) =>
   request<{ deleted: boolean }>(`/api/admin/categories/${encodeURIComponent(slug)}`, { method: 'DELETE' })
 
-export type ApiAddress = SavedAddress & { expiresAt: string }
+export type ApiAddress = SavedAddress & { expiresAt: string | null }
 export const fetchUserAddresses = () => request<ApiAddress[]>('/api/addresses')
 export const saveUserAddressesRemote = (addresses: SavedAddress[]) =>
   request<ApiAddress[]>('/api/addresses', { method: 'PUT', body: JSON.stringify({ addresses }) })
@@ -187,6 +187,7 @@ export const createOrder = (order: {
   address: string
   city: string
   pincode: string
+  customerType: 'retail' | 'wholesale'
   gstin?: string
   userId?: string
 }) =>

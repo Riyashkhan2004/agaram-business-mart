@@ -74,7 +74,7 @@ export function CheckoutPage({
       setCity('')
       setPincode(userPincode || '')
     } else {
-      fetchUserAddresses().then(remote => applySavedAddress(remote.filter(item => Date.parse(item.expiresAt) > Date.now()))).catch(() => {
+      fetchUserAddresses().then(remote => applySavedAddress(remote.filter(item => !item.expiresAt || Date.parse(item.expiresAt) > Date.now()))).catch(() => {
         applySavedAddress(loadSavedAddresses(currentUser.id).addresses)
       })
     }
@@ -136,6 +136,7 @@ export function CheckoutPage({
       address,
       city,
       pincode,
+      customerType,
       gstin: gstin || undefined,
     }
 
@@ -348,7 +349,7 @@ export function CheckoutPage({
                 style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontSize: '13px', boxSizing: 'border-box' }}
               />
               <span style={{ display: 'block', marginTop: '5px', color: '#64748b', fontSize: '11px' }}>
-                This delivery address is saved to your account for one hour when you place your order.
+                This delivery address stays saved to your account until you delete it.
               </span>
             </div>
 

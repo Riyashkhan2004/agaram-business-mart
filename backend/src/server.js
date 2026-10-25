@@ -113,6 +113,7 @@ const categorySchema = z.object({
 })
 const orderSchema = z.object({
   items: z.array(z.object({ productId: z.number().int().positive(), quantity: z.number().int().positive().max(100) })).min(1).max(30),
+  customerType: z.enum(['retail', 'wholesale']).default('retail'),
   customerName: z.string().trim().min(1).max(120), phone: phoneSchema, email: z.union([z.string().email().max(254), z.literal('')]).optional(),
   address: z.string().trim().min(5).max(500), city: z.string().trim().min(1).max(100),
   pincode: z.string().trim().regex(/^\d{6}$/), gstin: z.string().trim().max(20).optional(),
@@ -585,10 +586,9 @@ app.delete('/api/admin/products/:id', authorize('admin'), async (req, res) => {
   res.json({ deleted: true })
 })
 
-const addressFromRow = row => ({ id: row.id, name: row.name, phone: row.phone, address: row.address, city: row.city, pincode: row.pincode, isDefault: row.is_default, expiresAt: row.expires_at })
+const addressFromRow = row => ({ id: row.id, name: row.name, phone: row.phone, address: row.address, city: row.city, pincode: row.pincode, isDefault: row.is_default, expiresAt: null })
 app.get('/api/addresses', authorize('customer'), async (req, res) => {
-  await pool.query('DELETE FROM user_addresses WHERE user_id=$1 AND expires_at<=NOW()', [req.auth.sub])
-  const result = await pool.query('SELECT * FROM user_addresses WHERE user_id=$1 AND expires_at>NOW() ORDER BY is_default DESC,created_at DESC', [req.auth.sub])
+  const result = await pool.query('SELECT * FROM user_addresses WHERE user_id=$1 ORDER BY is_default DESC,created_at DESC', [req.auth.sub])
   res.json(result.rows.map(addressFromRow))
 })
 
@@ -602,7 +602,7 @@ app.put('/api/addresses', authorize('customer'), async (req, res) => {
     for (let index = 0; index < parsed.data.addresses.length; index += 1) {
       const address = parsed.data.addresses[index]
       await client.query(`INSERT INTO user_addresses(user_id,name,phone,address,city,pincode,is_default,expires_at)
-      VALUES($1,$2,$3,$4,$5,$6,$7,NOW()+INTERVAL '10 years')`,
+      VALUES($1,$2,$3,$4,$5,$6,$7,NULL)`,
       [req.auth.sub, address.name, address.phone, address.address, address.city, address.pincode, address.isDefault || (index === 0 && !parsed.data.addresses.some(item => item.isDefault))])
     }
     const result = await client.query('SELECT * FROM user_addresses WHERE user_id=$1 ORDER BY is_default DESC,created_at DESC', [req.auth.sub])
@@ -650,7 +650,14 @@ app.post('/api/orders', async (req, res) => {
       const product = productsById.get(item.productId)
       if (!product) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'A product in your cart is no longer available' }) }
       if (Number(product.stock) < item.quantity) { await client.query('ROLLBACK'); return res.status(409).json({ error: `${product.name} has only ${product.stock} in stock` }) }
-      const unitCents = Math.round(Number(product.price) * (item.quantity >= 10 ? 0.82 : item.quantity >= 5 ? 0.9 : 1) * 100)
+      const productTiers = Array.isArray(product.tiers) && product.tiers.length ? product.tiers : [
+        { minQty: 1, price: Number(product.price) },
+        { minQty: 3, price: Math.round(Number(product.price) * 0.92 * 100) / 100 },
+        { minQty: 6, price: Math.round(Number(product.price) * 0.84 * 100) / 100 },
+      ]
+      const tier = [...productTiers].sort((a, b) => Number(a.minQty) - Number(b.minQty)).reverse().find(candidate => item.quantity >= Number(candidate.minQty))
+      const wholesaleMultiplier = customer.customerType === 'wholesale' ? 0.95 : 1
+      const unitCents = Math.round(Number(tier?.price ?? product.price) * wholesaleMultiplier * 100)
       const lineCents = unitCents * item.quantity
       const lineTaxCents = Math.round(lineCents * Number(product.gst) / 100)
       subtotalCents += lineCents; taxCents += lineTaxCents
@@ -658,9 +665,9 @@ app.post('/api/orders', async (req, res) => {
     }
 
     const orderNo = `ABM${Date.now().toString(36).toUpperCase()}${randomUUID().slice(0,4).toUpperCase()}`
-    const inserted = await client.query(`INSERT INTO orders(order_no,user_id,customer_name,phone,email,address,city,pincode,gstin,subtotal,tax,total)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-      [orderNo, userId, customer.customerName, customer.phone, customer.email || sessionUser?.email || null, customer.address, customer.city, customer.pincode, customer.gstin || null, subtotalCents/100, taxCents/100, (subtotalCents+taxCents)/100])
+    const inserted = await client.query(`INSERT INTO orders(order_no,user_id,customer_name,phone,email,address,city,pincode,gstin,subtotal,tax,total,customer_type)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+      [orderNo, userId, customer.customerName, customer.phone, customer.email || sessionUser?.email || null, customer.address, customer.city, customer.pincode, customer.gstin || null, subtotalCents/100, taxCents/100, (subtotalCents+taxCents)/100, customer.customerType])
     const order = inserted.rows[0]
 
     for (const line of lines) {

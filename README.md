@@ -69,12 +69,12 @@ Set the frontend `.env` value `VITE_API_URL=http://localhost:4000`. Sign up, ope
 | GET | `/api/admin/orders` | Admin session | Review orders |
 
 At checkout, the backend recalculates prices, quantity discounts, GST and stock from database values. The shipping phone number is entered at checkout; it is not used as an authentication factor.
-Customer delivery addresses are attached to the signed-in user ID and retained for ten years, so saved checkout destinations remain available across visits.
+Customer delivery addresses are attached to the signed-in user ID and retained permanently until the customer removes or replaces them.
 
 ## Production deployment
 
 1. Create managed PostgreSQL with TLS certificate verification enabled. Keep the database private and allow connections only from the API host.
-2. Run `npm run db:migrate` using the database owner before deploying the API. It adds email/password fields, user-scoped delivery addresses, product image galleries, wholesale price tiers, product subcategories, and editable storefront categories, and removes the obsolete OTP challenge table. Existing phone-only accounts are retained but must create email/password accounts to use the new sign-in flow. Run `npm run db:seed` only when initializing an empty database; the seed script replaces the product catalogue.
+2. Run `npm run db:migrate` using the database owner before deploying the API. It adds email/password fields, permanent user-scoped delivery addresses, product image galleries, wholesale price tiers, product subcategories, and editable storefront categories, and removes the obsolete OTP challenge table. Existing phone-only accounts are retained but must create email/password accounts to use the new sign-in flow. Run `npm run db:seed` only when initializing an empty database; the seed script replaces the product catalogue.
 3. Put values from `backend/.env.production.example` in the backend host's secret manager. Use a verified email sender domain, `RESEND_API_KEY`, `EMAIL_FROM`, `PUBLIC_FRONTEND_URL`, secure database credentials, and strong admin credentials.
 4. Configure same-site storefront/API domains (for example, `shop.example.com` and `api.example.com`). Set `FRONTEND_ORIGIN` to the exact storefront origin and `VITE_API_URL` to the API origin. Set `PUBLIC_FRONTEND_URL` to the storefront URL.
 5. Give the API runtime database role only the table permissions it needs. Run migration/bootstrap with a separate database owner role. Do not grant `SUPERUSER`, `CREATEDB`, or `CREATEROLE` to the runtime account.
@@ -92,7 +92,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON email_verification_tokens TO abm_runtime
 GRANT SELECT, INSERT, UPDATE, DELETE ON user_sessions TO abm_runtime;
 GRANT SELECT, INSERT, UPDATE ON products TO abm_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON storefront_categories TO abm_runtime;
-GRANT SELECT, INSERT, DELETE ON user_addresses TO abm_runtime;
+GRANT SELECT, INSERT, UPDATE, DELETE ON user_addresses TO abm_runtime;
 GRANT SELECT, INSERT ON orders TO abm_runtime;
 GRANT SELECT, INSERT ON order_items TO abm_runtime;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO abm_runtime;

@@ -264,8 +264,8 @@ export default function App() {
     if (currentUser?.id) {
       const key = `abm_delivery_loc_${encodeURIComponent(currentUser.id)}`
       try {
-        const saved = JSON.parse(localStorage.getItem(key) || 'null') as { expiresAt?: number; location?: typeof selectedDeliveryLocation } | null
-        if (saved?.expiresAt && saved.expiresAt > Date.now() && saved.location) setSelectedDeliveryLocation(saved.location)
+        const saved = JSON.parse(localStorage.getItem(key) || 'null') as { location?: typeof selectedDeliveryLocation } | null
+        if (saved?.location) setSelectedDeliveryLocation(saved.location)
         else localStorage.removeItem(key)
       } catch { localStorage.removeItem(key) }
       setLocationOwnerId(currentUser.id)
@@ -277,10 +277,7 @@ export default function App() {
 
   useEffect(() => {
     if (currentUser?.id && locationOwnerId === currentUser.id) {
-      localStorage.setItem(`abm_delivery_loc_${encodeURIComponent(currentUser.id)}`, JSON.stringify({
-        expiresAt: Date.now() + 60 * 60 * 1000,
-        location: selectedDeliveryLocation,
-      }))
+      localStorage.setItem(`abm_delivery_loc_${encodeURIComponent(currentUser.id)}`, JSON.stringify({ location: selectedDeliveryLocation }))
     }
     if (selectedDeliveryLocation.pincode) {
       setUserPincode(selectedDeliveryLocation.pincode)
@@ -2484,7 +2481,7 @@ function CheckoutPage({
       if (!email && currentUser.email) setEmail(currentUser.email)
       fetchUserAddresses().then(addresses => {
         if (cancelled) return
-        const valid = addresses.filter(item => Date.parse(item.expiresAt) > Date.now())
+        const valid = addresses.filter(item => !item.expiresAt || Date.parse(item.expiresAt) > Date.now())
         setSavedAddresses(valid)
         const preferred = valid.find(item => item.isDefault) || valid[0]
         if (preferred) {
@@ -2563,6 +2560,7 @@ function CheckoutPage({
       address,
       city,
       pincode,
+      customerType,
       gstin,
     }
     const matchingAddress = savedAddresses.find(item => item.address === address && item.city === city && item.pincode === pincode)

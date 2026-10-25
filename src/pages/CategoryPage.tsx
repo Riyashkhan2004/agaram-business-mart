@@ -218,6 +218,7 @@ export function CategoryPage({
         product={previewProduct}
         onClose={() => setPreviewProduct(null)}
         onAddToCart={id => onAddToCart(id, 1)}
+        customerType={customerType}
         lang={lang}
       />
     </div>

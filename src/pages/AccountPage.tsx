@@ -27,6 +27,7 @@ import {
 import { fetchUserOrders, fetchUserAddresses, saveUserAddressesRemote, customerLogin, signUp, logout, cancelCustomerOrder, ApiOrder } from '../api'
 import { Product, Language, t, money, unitPrice, CustomerType } from '../data/products'
 import { loadSavedAddresses, saveUserAddresses, type SavedAddress } from '../utils/savedAddresses'
+import { MapLocationPickerModal } from '../components/MapLocationPickerModal'
 
 interface AccountPageProps {
   currentUser: { id?: string; name?: string; email?: string; phone?: string } | null
@@ -90,7 +91,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
 
   // Saved addresses
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>(() => loadSavedAddresses(currentUser?.id).addresses)
-  const [savedAddressExpiry, setSavedAddressExpiry] = useState<number>(() => loadSavedAddresses(currentUser?.id).expiresAt)
+  const [savedAddressExpiry, setSavedAddressExpiry] = useState<number>(() => loadSavedAddresses(currentUser?.id).expiresAt || 0)
   const [savedAddressOwnerId, setSavedAddressOwnerId] = useState<string | undefined>(currentUser?.id)
   const accountAddresses = savedAddressOwnerId === currentUser?.id ? savedAddresses : []
 
@@ -101,6 +102,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
   const [newAddrStreet, setNewAddrStreet] = useState('')
   const [newAddrCity, setNewAddrCity] = useState('Cuddalore')
   const [newAddrPincode, setNewAddrPincode] = useState('607001')
+  const [addressMapOpen, setAddressMapOpen] = useState(false)
 
   // Copied coupon toast
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
@@ -162,11 +164,12 @@ export const AccountPage: React.FC<AccountPageProps> = ({
       applyAddresses([], 0)
     } else {
       fetchUserAddresses().then(remote => {
-        const valid = remote.filter(item => Date.parse(item.expiresAt) > Date.now())
-        applyAddresses(valid, valid.length ? Math.min(...valid.map(item => Date.parse(item.expiresAt))) : 0)
+        const valid = remote.filter(item => !item.expiresAt || Date.parse(item.expiresAt) > Date.now())
+        const expiring = valid.map(item => item.expiresAt ? Date.parse(item.expiresAt) : 0).filter(Boolean)
+        applyAddresses(valid, expiring.length ? Math.min(...expiring) : 0)
       }).catch(() => {
         const local = loadSavedAddresses(currentUser.id)
-        applyAddresses(local.addresses, local.expiresAt)
+        applyAddresses(local.addresses, local.expiresAt || 0)
       })
     }
     return () => { cancelled = true }
@@ -242,7 +245,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
     try {
       const remote = await saveUserAddressesRemote(updated)
       setSavedAddresses(remote)
-      setSavedAddressExpiry(remote.length ? Math.min(...remote.map(item => Date.parse(item.expiresAt))) : 0)
+      setSavedAddressExpiry(0)
     } catch {}
     setShowNewAddressModal(false)
     setNewAddrName('')
@@ -258,7 +261,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
     try {
       const remote = await saveUserAddressesRemote(updated)
       setSavedAddresses(remote)
-      setSavedAddressExpiry(remote.length ? Math.min(...remote.map(item => Date.parse(item.expiresAt))) : 0)
+      setSavedAddressExpiry(0)
     } catch {}
   }
 
@@ -1250,7 +1253,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                 <div>
                   <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: 0 }}>Saved Delivery Addresses</h2>
                   <p style={{ fontSize: '12.5px', color: '#64748b', margin: '2px 0 0' }}>
-                    Saved only for this account and removed after one hour{savedAddressExpiry > Date.now() ? ` · expires ${new Date(savedAddressExpiry).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}
+                    Saved to this account permanently until you delete it.
                   </p>
                 </div>
                 <button
@@ -1265,7 +1268,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {accountAddresses.length === 0 && (
                   <div style={{ background: '#fff', border: '1px dashed #cbd5e1', borderRadius: '14px', padding: '24px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
-                    No saved addresses yet. Add one and it will stay linked to this account for one hour.
+                    No saved addresses yet. Add one and it will stay linked to this account until you delete it.
                   </div>
                 )}
                 {accountAddresses.map(addr => (
@@ -1377,6 +1380,9 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                           style={{ width: '100%', height: '40px', borderRadius: '8px' }}
                         />
                       </label>
+                      <button type="button" className="btn btn-secondary" onClick={() => setAddressMapOpen(true)} style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                        <MapPin size={16} /> Choose address on map
+                      </button>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                         <label style={{ fontSize: '12px', fontWeight: 700 }}>
                           City
@@ -1415,6 +1421,13 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                   </div>
                 </div>
               )}
+              <MapLocationPickerModal
+                isOpen={addressMapOpen}
+                onClose={() => setAddressMapOpen(false)}
+                currentPincode={newAddrPincode}
+                onSelectAddress={location => { setNewAddrStreet(location.address); setNewAddrCity(location.city); setNewAddrPincode(location.pincode); setAddressMapOpen(false) }}
+                lang={lang}
+              />
             </div>
           )}
 

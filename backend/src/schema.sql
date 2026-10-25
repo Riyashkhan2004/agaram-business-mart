@@ -57,11 +57,16 @@ CREATE TABLE IF NOT EXISTS user_addresses (
   city VARCHAR(100) NOT NULL,
   pincode VARCHAR(6) NOT NULL,
   is_default BOOLEAN NOT NULL DEFAULT FALSE,
-  expires_at TIMESTAMPTZ NOT NULL,
+  expires_at TIMESTAMPTZ DEFAULT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS user_addresses_owner_expiry_idx ON user_addresses(user_id, expires_at DESC);
+
+-- Delivery addresses belong to the customer until they remove or replace them.
+ALTER TABLE user_addresses ALTER COLUMN expires_at DROP NOT NULL;
+ALTER TABLE user_addresses ALTER COLUMN expires_at SET DEFAULT NULL;
+UPDATE user_addresses SET expires_at = NULL WHERE expires_at IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS products (
   id INTEGER PRIMARY KEY,
@@ -137,9 +142,12 @@ CREATE TABLE IF NOT EXISTS orders (
   subtotal NUMERIC(12,2) NOT NULL CHECK (subtotal >= 0),
   tax NUMERIC(12,2) NOT NULL CHECK (tax >= 0),
   total NUMERIC(12,2) NOT NULL CHECK (total >= 0),
+  customer_type VARCHAR(16) NOT NULL DEFAULT 'retail' CHECK (customer_type IN ('retail', 'wholesale')),
   status VARCHAR(24) NOT NULL DEFAULT 'received' CHECK (status IN ('received', 'confirmed', 'packed', 'shipped', 'delivered', 'cancelled')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_type VARCHAR(16) NOT NULL DEFAULT 'retail' CHECK (customer_type IN ('retail', 'wholesale'));
 
 CREATE INDEX IF NOT EXISTS orders_user_created_idx ON orders (user_id, created_at DESC);
 

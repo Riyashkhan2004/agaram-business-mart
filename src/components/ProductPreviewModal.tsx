@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { X, Star, ShoppingBag, ShieldCheck, Zap, Edit3, Check } from 'lucide-react'
-import { money, type Product } from '../data/products'
+import { money, type Product, type CustomerType, getProductTiers, unitPrice } from '../data/products'
 import { getProductGallery } from '../data/products'
 
 interface ProductPreviewModalProps {
@@ -10,6 +10,7 @@ interface ProductPreviewModalProps {
   onEdit?: (product: Product) => void
   isAdminView?: boolean
   lang?: 'en' | 'ta'
+  customerType?: CustomerType
 }
 
 export function ProductPreviewModal({
@@ -18,7 +19,8 @@ export function ProductPreviewModal({
   onAddToCart,
   onEdit,
   isAdminView = false,
-  lang = 'en'
+  lang = 'en',
+  customerType = 'retail'
 }: ProductPreviewModalProps) {
   const [selectedImg, setSelectedImg] = useState<string>('')
   const [added, setAdded] = useState(false)
@@ -32,9 +34,12 @@ export function ProductPreviewModal({
 
   // Ensure 3 to 5 images for previewing
   const gallery = getProductGallery(product)
-  const discountPct = product.mrp > product.price
-    ? Math.round(((product.mrp - product.price) / product.mrp) * 100)
+  const previewPrice = unitPrice(product, 1, customerType)
+  const discountPct = product.mrp > previewPrice
+    ? Math.round(((product.mrp - previewPrice) / product.mrp) * 100)
     : 0
+  const quantityTiers = getProductTiers(product)
+  const baseTierUnitPrice = unitPrice(product, quantityTiers[0]?.minQty || 1, customerType)
 
   const handleAdd = () => {
     if (onAddToCart) {
@@ -185,9 +190,9 @@ export function ProductPreviewModal({
               {/* Price Row */}
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', margin: '12px 0 6px' }}>
                 <span style={{ fontSize: '26px', fontWeight: 900, color: '#15803d' }}>
-                  {money(product.price)}
+                  {money(previewPrice)}
                 </span>
-                {product.mrp > product.price && (
+                {product.mrp > previewPrice && (
                   <>
                     <span style={{ fontSize: '14px', color: '#94a3b8', textDecoration: 'line-through' }}>
                       {money(product.mrp)}
@@ -231,19 +236,16 @@ export function ProductPreviewModal({
                 <div style={{ fontSize: '11px', fontWeight: 900, color: '#0f172a', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                   📦 Wholesale Slabs (Instant Bulk Discount)
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', fontSize: '11px', textAlign: 'center' }}>
-                  <div style={{ background: '#fff', padding: '6px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ color: '#64748b' }}>1-4 units</div>
-                    <div style={{ fontWeight: 800 }}>{money(product.price)}</div>
-                  </div>
-                  <div style={{ background: '#ecfdf5', padding: '6px', borderRadius: '6px', border: '1px solid #a7f3d0' }}>
-                    <div style={{ color: '#047857', fontWeight: 700 }}>5-9 units</div>
-                    <div style={{ fontWeight: 900, color: '#047857' }}>Save 10%</div>
-                  </div>
-                  <div style={{ background: '#fef3c7', padding: '6px', borderRadius: '6px', border: '1px solid #fde68a' }}>
-                    <div style={{ color: '#b45309', fontWeight: 700 }}>10+ units</div>
-                    <div style={{ fontWeight: 900, color: '#b45309' }}>Save 18%</div>
-                  </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '6px', fontSize: '10.5px', textAlign: 'center' }}>
+                  {quantityTiers.map((tier, index) => {
+                    const tierPrice = unitPrice(product, tier.minQty, customerType)
+                    const savedPct = baseTierUnitPrice > 0 ? Math.max(0, Math.round((1 - tierPrice / baseTierUnitPrice) * 100)) : 0
+                    return <div key={`${tier.minQty}-${tier.maxQty || 'plus'}`} style={{ background: index === 0 ? '#fff' : index === quantityTiers.length - 1 ? '#fef3c7' : '#ecfdf5', padding: '7px 5px', borderRadius: '6px', border: `1px solid ${index === 0 ? '#e2e8f0' : index === quantityTiers.length - 1 ? '#fde68a' : '#a7f3d0'}` }}>
+                      <div style={{ color: index === 0 ? '#64748b' : index === quantityTiers.length - 1 ? '#b45309' : '#047857', fontWeight: 700 }}>{tier.label || `${tier.minQty}${tier.maxQty ? `–${tier.maxQty}` : '+'} units`}</div>
+                      <div style={{ marginTop: 3, fontWeight: 900, color: '#0f172a' }}>{money(tierPrice)} / unit</div>
+                      <div style={{ marginTop: 2, color: index ? '#047857' : '#64748b', fontWeight: 800 }}>{index ? `Save ${savedPct}%` : 'Base price'}</div>
+                    </div>
+                  })}
                 </div>
               </div>
 
@@ -329,7 +331,7 @@ export function ProductPreviewModal({
                     'Out of Stock'
                   ) : (
                     <>
-                      <ShoppingBag size={18} /> Add to Cart · {money(product.price)}
+                      <ShoppingBag size={18} /> Add to Cart · {money(previewPrice)}
                     </>
                   )}
                 </button>

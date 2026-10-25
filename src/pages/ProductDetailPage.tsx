@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { Star, ShieldCheck, Heart, ShoppingBag, Truck, RotateCcw, Award, Check } from 'lucide-react'
-import { money, type Product, getProductGallery } from '../data/products'
+import { money, type Product, getProductGallery, getProductTiers, unitPrice } from '../data/products'
 
 interface ProductDetailPageProps {
   products: Product[]
@@ -50,8 +50,10 @@ export function ProductDetailPage({
   }
 
   const isWishlisted = wishlist.includes(product.id)
-  const price = customerType === 'wholesale' ? Math.round(product.price * 0.9) : product.price
+  const price = unitPrice(product, 1, customerType)
   const discountPct = product.mrp > price ? Math.round(((product.mrp - price) / product.mrp) * 100) : 0
+  const quantityTiers = getProductTiers(product)
+  const baseTierUnitPrice = unitPrice(product, quantityTiers[0]?.minQty || 1, customerType)
 
   const handleAddToCart = () => {
     onAddToCart(product.id, qty)
@@ -214,19 +216,16 @@ export function ProductDetailPage({
               <div style={{ fontSize: '12px', fontWeight: 900, color: '#0f172a', marginBottom: '6px' }}>
                 📦 Quantity Wholesale Pricing Slabs:
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', fontSize: '11.5px', textAlign: 'center' }}>
-                <div style={{ background: '#fff', padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ color: '#64748b' }}>1-4 units</div>
-                  <div style={{ fontWeight: 800 }}>{money(product.price)}</div>
-                </div>
-                <div style={{ background: '#ecfdf5', padding: '8px', borderRadius: '8px', border: '1px solid #a7f3d0' }}>
-                  <div style={{ color: '#047857', fontWeight: 700 }}>5-9 units</div>
-                  <div style={{ fontWeight: 900, color: '#047857' }}>Save 10%</div>
-                </div>
-                <div style={{ background: '#fef3c7', padding: '8px', borderRadius: '8px', border: '1px solid #fde68a' }}>
-                  <div style={{ color: '#b45309', fontWeight: 700 }}>10+ units</div>
-                  <div style={{ fontWeight: 900, color: '#b45309' }}>Save 18%</div>
-                </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(122px, 1fr))', gap: '8px', fontSize: '11.5px', textAlign: 'center' }}>
+                {quantityTiers.map((tier, index) => {
+                  const tierPrice = unitPrice(product, tier.minQty, customerType)
+                  const savedPct = baseTierUnitPrice > 0 ? Math.max(0, Math.round((1 - tierPrice / baseTierUnitPrice) * 100)) : 0
+                  return <div key={`${tier.minQty}-${tier.maxQty || 'plus'}`} style={{ background: index === 0 ? '#fff' : index === quantityTiers.length - 1 ? '#fef3c7' : '#ecfdf5', padding: '9px 7px', borderRadius: '8px', border: `1px solid ${index === 0 ? '#e2e8f0' : index === quantityTiers.length - 1 ? '#fde68a' : '#a7f3d0'}` }}>
+                    <div style={{ color: index === 0 ? '#64748b' : index === quantityTiers.length - 1 ? '#b45309' : '#047857', fontWeight: 700 }}>{tier.label || `${tier.minQty}${tier.maxQty ? `–${tier.maxQty}` : '+'} units`}</div>
+                    <div style={{ marginTop: 4, fontWeight: 900, color: '#0f172a' }}>{money(tierPrice)} <small style={{ fontSize: 10, fontWeight: 600, color: '#64748b' }}>/ unit</small></div>
+                    <div style={{ marginTop: 2, fontSize: 10.5, fontWeight: 800, color: index === 0 ? '#64748b' : '#047857' }}>{index === 0 ? 'Base price' : `Save ${savedPct}%`}</div>
+                  </div>
+                })}
               </div>
             </div>
           </div>
