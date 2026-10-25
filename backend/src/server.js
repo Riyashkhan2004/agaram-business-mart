@@ -444,7 +444,7 @@ app.post('/api/auth/login', async (req, res) => {
   const parsed = z.object({ email: z.string().trim().email().max(254), password: z.string().min(1).max(200) }).safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: 'Enter a valid email and password' })
   const email = parsed.data.email.toLowerCase()
-  const result = await pool.query('SELECT id,email,name,password_hash,email_verified_at FROM users WHERE email=$1', [email])
+  const result = await pool.query('SELECT id,email,name,phone,password_hash,email_verified_at FROM users WHERE email=$1', [email])
   const user = result.rows[0]
   const valid = await bcrypt.compare(parsed.data.password, user?.password_hash || dummyPasswordHash)
   if (!user || !valid) return res.status(401).json({ error: 'Email or password is incorrect' })
@@ -453,7 +453,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
   const session = await createSession({ userId: user.id, lifetimeHours: 12 })
   setSessionCookie(res, session.token, 12 * 60 * 60)
-  res.json({ token: session.token, user: { id: user.id, name: user.name, email: user.email } })
+  res.json({ token: session.token, user: { id: user.id, name: user.name, email: user.email, phone: user.phone || '' } })
 })
 
 app.post('/api/auth/admin/login', async (req, res) => {

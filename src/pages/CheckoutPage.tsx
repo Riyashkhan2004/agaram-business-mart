@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { ShieldCheck, Truck, Check, Lock, ArrowLeft, ArrowRight } from 'lucide-react'
 import { money, type Product } from '../data/products'
-import { createOrder, fetchUserAddresses, saveUserAddressesRemote, customerLogin, signUp, type ApiOrder } from '../api'
+import { createOrder, fetchUserAddresses, fetchUserOrders, saveUserAddressesRemote, customerLogin, signUp, type ApiOrder } from '../api'
 import { loadSavedAddresses, saveUserAddresses } from '../utils/savedAddresses'
 
 interface CheckoutPageProps {
   cart: { productId: number; quantity: number }[]
   products: Product[]
-  currentUser: { id?: string; name?: string; email?: string } | null
-  setCurrentUser: (u: { id?: string; name?: string; email?: string } | null) => void
+  currentUser: { id?: string; name?: string; email?: string; phone?: string } | null
+  setCurrentUser: (u: { id?: string; name?: string; email?: string; phone?: string } | null) => void
   userPincode: string
   onClearCart: () => void
   customerType: 'retail' | 'wholesale'
@@ -30,7 +30,7 @@ export function CheckoutPage({
 
   // Checkout Form State
   const [name, setName] = useState(currentUser?.name || '')
-  const [phone, setPhone] = useState('')
+  const [phone, setPhone] = useState(currentUser?.phone || '')
   const [email, setEmail] = useState(currentUser?.email || '')
   const [address, setAddress] = useState('')
   const [city, setCity] = useState('')
@@ -74,8 +74,20 @@ export function CheckoutPage({
       setCity('')
       setPincode(userPincode || '')
     } else {
-      fetchUserAddresses().then(remote => applySavedAddress(remote.filter(item => !item.expiresAt || Date.parse(item.expiresAt) > Date.now()))).catch(() => {
-        applySavedAddress(loadSavedAddresses(currentUser.id).addresses)
+      fetchUserAddresses().then(remote => {
+        const merged = remote.length ? remote : loadSavedAddresses(currentUser.id).addresses
+        if (merged.length) applySavedAddress(merged)
+        else fetchUserOrders(currentUser.email, currentUser.id).then(orders => {
+          const latest = orders[0]
+          if (latest) { setName(currentUser.name || latest.customerName); setPhone(latest.phone); setAddress(latest.address); setCity(latest.city); setPincode(latest.pincode) }
+        }).catch(() => {})
+      }).catch(() => {
+        const saved = loadSavedAddresses(currentUser.id).addresses
+        if (saved.length) applySavedAddress(saved)
+        else fetchUserOrders(currentUser.email, currentUser.id).then(orders => {
+          const latest = orders[0]
+          if (latest) { setName(currentUser.name || latest.customerName); setPhone(latest.phone); setAddress(latest.address); setCity(latest.city); setPincode(latest.pincode) }
+        }).catch(() => {})
       })
     }
     return () => { cancelled = true }

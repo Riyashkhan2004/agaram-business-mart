@@ -17,7 +17,7 @@ import {
   saveProduct, deleteProduct, pingBackend, type ApiOrder
 } from './api'
 import { MapLocationPickerModal } from './components/MapLocationPickerModal'
-import { saveUserAddresses, type SavedAddress } from './utils/savedAddresses'
+import { loadSavedAddresses, saveUserAddresses, type SavedAddress } from './utils/savedAddresses'
 import { DeliveryPartnerLiveMapModal } from './components/DeliveryPartnerLiveMapModal'
 import { AccountPage as AccountProfilePage } from './pages/AccountPage'
 import { HomePage as WholesaleHomePage } from './pages/HomePage'
@@ -200,7 +200,7 @@ export default function App() {
   const [themePickerOpen, setThemePickerOpen] = useState(false)
   const [userPincode, setUserPincode] = useState(() => readStorage('abm_pincode', '600001'))
   const [pincodeModalOpen, setPincodeModalOpen] = useState(false)
-  const [currentUser, setCurrentUser] = useState<{ id?: string; name?: string; email?: string } | null>(null)
+  const [currentUser, setCurrentUser] = useState<{ id?: string; name?: string; email?: string; phone?: string } | null>(null)
   const [coinBalance, setCoinBalance] = useState(50)
   const [locationOwnerId, setLocationOwnerId] = useState<string | null>(null)
   const [mapPickerOpen, setMapPickerOpen] = useState(false)
@@ -2443,13 +2443,13 @@ function CheckoutPage({
   customerType: CustomerType
   userPincode: string
   clearCart: () => void
-  currentUser: { id?: string; name?: string; email?: string } | null
-  setCurrentUser: (u: { id?: string; name?: string; email?: string } | null) => void
+  currentUser: { id?: string; name?: string; email?: string; phone?: string } | null
+  setCurrentUser: (u: { id?: string; name?: string; email?: string; phone?: string } | null) => void
   lang?: Language
 }) {
   const navigate = useNavigate()
   const [name, setName] = useState(currentUser?.name || '')
-  const [phone, setPhone] = useState('')
+  const [phone, setPhone] = useState(currentUser?.phone || '')
   const [email, setEmail] = useState(currentUser?.email || '')
   const [address, setAddress] = useState('')
   const [city, setCity] = useState('Chennai')
@@ -2479,19 +2479,52 @@ function CheckoutPage({
     if (currentUser?.id) {
       if (!name && currentUser.name) setName(currentUser.name)
       if (!email && currentUser.email) setEmail(currentUser.email)
-      fetchUserAddresses().then(addresses => {
+      setPhone(currentUser.phone || '')
+      const localAddresses = loadSavedAddresses(currentUser.id).addresses
+      const localOrders = readStorage<ApiOrder[]>('abm_orders', []).filter(order => order.userId === currentUser.id)
+      Promise.allSettled([fetchUserAddresses(), fetchUserOrders(currentUser.email, currentUser.id)]).then(([addressesResult, ordersResult]) => {
         if (cancelled) return
-        const valid = addresses.filter(item => !item.expiresAt || Date.parse(item.expiresAt) > Date.now())
-        setSavedAddresses(valid)
-        const preferred = valid.find(item => item.isDefault) || valid[0]
-        if (preferred) {
-          setName(preferred.name); setPhone(preferred.phone); setAddress(preferred.address)
-          setCity(preferred.city); setPincode(preferred.pincode)
+        const remoteAddresses = addressesResult.status === 'fulfilled'
+          ? addressesResult.value.filter(item => !item.expiresAt || Date.parse(item.expiresAt) > Date.now())
+          : []
+        // Prefer account records, but preserve a locally cached address if the API
+        // returns an empty list or is temporarily unavailable.
+        const merged = [...remoteAddresses, ...localAddresses]
+        const unique = new Map<string, SavedAddress>()
+        for (const item of merged) {
+          const key = `${item.address.trim().toLowerCase()}|${item.city.trim().toLowerCase()}|${item.pincode}`
+          const current = unique.get(key)
+          unique.set(key, current ? { ...item, isDefault: current.isDefault || item.isDefault } : item)
         }
-      }).catch(() => {})
+        const available = [...unique.values()].sort((a, b) => Number(b.isDefault) - Number(a.isDefault))
+        setSavedAddresses(available)
+        const remoteOrders = ordersResult.status === 'fulfilled' ? ordersResult.value : []
+        const latestOrder = remoteOrders[0] || localOrders[0]
+        const preferred = available[0]
+        if (preferred) {
+          setName(currentUser.name || preferred.name)
+          setPhone(preferred.phone || currentUser.phone || latestOrder?.phone || '')
+          setAddress(preferred.address)
+          setCity(preferred.city)
+          setPincode(preferred.pincode)
+        } else if (latestOrder) {
+          setName(currentUser.name || latestOrder.customerName)
+          setPhone(currentUser.phone || latestOrder.phone || '')
+          setAddress(latestOrder.address || '')
+          setCity(latestOrder.city || '')
+          setPincode(latestOrder.pincode || userPincode)
+        }
+      })
+    } else {
+      setName(currentUser?.name || '')
+      setEmail(currentUser?.email || '')
+      setPhone(currentUser?.phone || '')
+      setAddress('')
+      setCity('')
+      setPincode(userPincode)
     }
     return () => { cancelled = true }
-  }, [currentUser])
+  }, [currentUser?.id, currentUser?.name, currentUser?.email, currentUser?.phone, userPincode])
 
   const subtotal = cart.reduce((sum, item) => {
     const prod = products.find(p => p.id === item.productId)
@@ -2523,6 +2556,7 @@ function CheckoutPage({
         setCurrentUser(res.user)
         setName(res.user.name || '')
         setEmail(res.user.email || authEmail)
+        setPhone(res.user.phone || '')
       }
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : 'Authentication failed')

@@ -132,7 +132,7 @@ export const resendVerificationEmail = (email: string) =>
 
 export const customerLogin = async (email: string, password: string) => {
   localStorage.removeItem('abm_admin_token')
-  const res = await request<{ user: { id: string; name: string; email: string }; token?: string }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
+  const res = await request<{ user: { id: string; name: string; email: string; phone?: string }; token?: string }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
   if (res.token) localStorage.setItem('abm_auth_token', res.token)
   return res
 }
