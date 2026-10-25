@@ -7,10 +7,10 @@ import { fileURLToPath } from 'node:url'
 const { Pool } = pg
 const here = path.dirname(fileURLToPath(import.meta.url))
 
-export const FALLBACK_DATABASE_URL = 'postgresql://neondb_owner:npg_72sUImhPHtJW@ep-royal-breeze-b4jg1scq-pooler.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
-
 export function sanitizeDatabaseUrl(raw) {
-  if (!raw || typeof raw !== 'string') return FALLBACK_DATABASE_URL
+  if (!raw || typeof raw !== 'string') {
+    throw new Error('DATABASE_URL must be configured in the service environment before starting the API.')
+  }
   let cleaned = raw.trim()
   // Strip accidental prefix like "DATABASE_URL=postgres..." or "database_url: postgres..."
   cleaned = cleaned.replace(/^(?:DATABASE_URL|DATABASE_URI|DATABASE)\s*[:=]\s*/i, '').trim()
@@ -18,17 +18,30 @@ export function sanitizeDatabaseUrl(raw) {
   cleaned = cleaned.replace(/^['"`]+|['"`]+$/g, '').trim()
   // If empty, or corrupted to literal 'base', or missing protocol '://'
   if (!cleaned || cleaned === 'base' || !cleaned.includes('://')) {
-    return FALLBACK_DATABASE_URL
+    throw new Error('DATABASE_URL is malformed. Configure a valid PostgreSQL connection string in the service environment.')
   }
-  return cleaned
+  let parsed
+  try {
+    parsed = new URL(cleaned)
+  } catch {
+    throw new Error('DATABASE_URL is malformed. Configure a valid PostgreSQL connection string in the service environment.')
+  }
+  if (!['postgres:', 'postgresql:'].includes(parsed.protocol)) {
+    throw new Error('DATABASE_URL must use the postgres:// or postgresql:// protocol.')
+  }
+  const channelBinding = parsed.searchParams.get('channel_binding')?.toLowerCase()
+  if (channelBinding === 'verify-full') parsed.searchParams.set('channel_binding', 'require')
+  else if (channelBinding && !['disable', 'prefer', 'require'].includes(channelBinding)) {
+    throw new Error('DATABASE_URL channel_binding must be disable, prefer, or require.')
+  }
+  return parsed.toString()
 }
 
 const connectionString = sanitizeDatabaseUrl(process.env.DATABASE_URL)
-const isLocal = connectionString.includes('localhost') || connectionString.includes('127.0.0.1')
 
 export const pool = new Pool({
   connectionString,
-  ssl: isLocal ? false : { rejectUnauthorized: false },
+  enableChannelBinding: true,
   max: Number(process.env.PG_POOL_SIZE || 10),
   connectionTimeoutMillis: 10000,
   idleTimeoutMillis: 30000,

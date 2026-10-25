@@ -313,7 +313,15 @@ async function createAndSendVerification(user) {
 
 const safeProduct = row => camelProduct(row)
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'agaram-api' }))
+app.get('/api/health', async (_req, res) => {
+  try {
+    await pool.query('SELECT 1')
+    res.json({ ok: true, service: 'agaram-api', database: 'connected' })
+  } catch (error) {
+    console.error('Health check database query failed:', { code: error?.code || 'internal', message: error?.message })
+    res.status(503).json({ ok: false, service: 'agaram-api', database: 'unavailable' })
+  }
+})
 app.get('/api/products', async (req, res) => {
   const values = []
   const filters = ['active = TRUE']
