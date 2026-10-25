@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import { ImagePlus, Plus, Save } from 'lucide-react'
+import { ImagePlus, Plus, Save, Trash2 } from 'lucide-react'
 import type { StationeryCategory } from '../data/products'
 
 type Props = {
   categories: StationeryCategory[]
   saving: boolean
   onSave: (categories: StationeryCategory[]) => Promise<boolean>
+  onDelete: (slug: string) => Promise<boolean>
 }
 
 const slugify = (value: string) => value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
-export function StorefrontCategories({ categories, saving, onSave }: Props) {
+export function StorefrontCategories({ categories, saving, onSave, onDelete }: Props) {
   const [drafts, setDrafts] = useState(categories)
   const [selectedSlug, setSelectedSlug] = useState(categories[0]?.slug || '')
   const [newCategorySlugs, setNewCategorySlugs] = useState<Set<string>>(() => new Set())
@@ -82,6 +83,16 @@ export function StorefrontCategories({ categories, saving, onSave }: Props) {
     if (saved) setNewCategorySlugs(new Set())
   }
 
+  const handleDelete = async () => {
+    if (!selected) return
+    if (!window.confirm(`Delete the “${selected.name}” storefront category? Products assigned to it will remain in inventory.`)) return
+    setError('')
+    if (!await onDelete(selected.slug)) return
+    const remaining = drafts.filter(category => category.slug !== selected.slug)
+    setDrafts(remaining)
+    setSelectedSlug(remaining[0]?.slug || '')
+  }
+
   return (
     <section className="admin-category-manager">
       <div className="admin-category-list">
@@ -93,10 +104,13 @@ export function StorefrontCategories({ categories, saving, onSave }: Props) {
           <button className="admin-btn admin-btn-secondary" type="button" onClick={addCategory}><Plus size={15} /> Add category</button>
         </div>
         {drafts.map(category => (
-          <button key={category.slug} type="button" className={`admin-category-row ${selectedSlug === category.slug ? 'active' : ''}`} onClick={() => setSelectedSlug(category.slug)}>
-            {category.image ? <img src={category.image} alt="" /> : <span className="admin-category-icon">{category.icon}</span>}
-            <span><b>{category.name}</b><small>/{category.slug}</small></span>
-          </button>
+          <div key={category.slug} className={`admin-category-row ${selectedSlug === category.slug ? 'active' : ''}`}>
+            <button type="button" onClick={() => setSelectedSlug(category.slug)}>
+              {category.image ? <img src={category.image} alt="" /> : <span className="admin-category-icon">{category.icon}</span>}
+              <span><b>{category.name}</b><small>/{category.slug}</small></span>
+            </button>
+            <button type="button" className="admin-category-delete" aria-label={`Delete ${category.name}`} title={`Delete ${category.name}`} onClick={() => { if (!window.confirm(`Delete the “${category.name}” storefront category? Products assigned to it will remain in inventory.`)) return; void onDelete(category.slug).then(deleted => { if (deleted) { const remaining = drafts.filter(item => item.slug !== category.slug); setDrafts(remaining); setSelectedSlug(current => current === category.slug ? (remaining[0]?.slug || '') : current) } }) }}><Trash2 size={15} /></button>
+          </div>
         ))}
       </div>
 
@@ -107,6 +121,7 @@ export function StorefrontCategories({ categories, saving, onSave }: Props) {
             <button type="button" className="admin-btn admin-btn-primary" disabled={saving} onClick={() => void handleSave()}>
               <Save size={15} /> {saving ? 'Saving…' : 'Save changes'}
             </button>
+            <button type="button" className="admin-btn admin-btn-secondary" disabled={saving} onClick={() => void handleDelete()}><Trash2 size={15} /> Delete category</button>
           </div>
           {error && <p className="admin-category-error" role="alert">{error}</p>}
           <div className="admin-category-form-grid">

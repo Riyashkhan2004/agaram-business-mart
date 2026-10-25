@@ -571,6 +571,9 @@ body {
 }
 .admin-category-row:hover,
 .admin-category-row.active { border-color: var(--admin-border); background: var(--admin-bg); }
+.admin-category-row > button:first-child { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 7px; color: inherit; text-align: left; border: 0; background: transparent; cursor: pointer; }
+.admin-category-delete { display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 auto; color: #b91c1c; border: 1px solid #fecaca; border-radius: 8px; background: #fff; cursor: pointer; }
+.admin-category-delete:hover { background: #fef2f2; }
 .admin-category-row img,
 .admin-category-icon { width: 40px; height: 40px; flex: 0 0 auto; border-radius: 50%; object-fit: cover; display: grid; place-items: center; background: var(--admin-bg); font-size: 21px; }
 .admin-category-row b,

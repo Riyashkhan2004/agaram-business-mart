@@ -167,6 +167,9 @@ export const fetchAdminCategories = () => request<StationeryCategory[]>('/api/ad
 export const saveAdminCategories = (categories: StationeryCategory[]) =>
   request<StationeryCategory[]>('/api/admin/categories', { method: 'PUT', body: JSON.stringify({ categories }) })
 
+export const deleteAdminCategory = (slug: string) =>
+  request<{ deleted: boolean }>(`/api/admin/categories/${encodeURIComponent(slug)}`, { method: 'DELETE' })
+
 export type ApiAddress = SavedAddress & { expiresAt: string }
 export const fetchUserAddresses = () => request<ApiAddress[]>('/api/addresses')
 export const saveUserAddressesRemote = (addresses: SavedAddress[]) =>

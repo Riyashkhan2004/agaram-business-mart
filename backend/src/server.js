@@ -499,6 +499,12 @@ app.get('/api/admin/categories', authorize('admin'), async (_req, res) => {
   res.json(result.rows.map(categoryFromRow))
 })
 
+app.delete('/api/admin/categories/:slug', authorize('admin'), async (req, res) => {
+  const result = await pool.query('DELETE FROM storefront_categories WHERE slug=$1 RETURNING slug', [req.params.slug])
+  if (!result.rowCount) return res.status(404).json({ error: 'Category not found' })
+  res.json({ deleted: true })
+})
+
 app.put('/api/admin/categories', authorize('admin'), async (req, res) => {
   const parsed = z.array(categorySchema).max(50).safeParse(req.body?.categories)
   if (!parsed.success) return res.status(400).json({ error: 'Invalid category details', details: parsed.error.flatten() })
@@ -596,7 +602,7 @@ app.put('/api/addresses', authorize('customer'), async (req, res) => {
     for (let index = 0; index < parsed.data.addresses.length; index += 1) {
       const address = parsed.data.addresses[index]
       await client.query(`INSERT INTO user_addresses(user_id,name,phone,address,city,pincode,is_default,expires_at)
-        VALUES($1,$2,$3,$4,$5,$6,$7,NOW()+INTERVAL '1 hour')`,
+      VALUES($1,$2,$3,$4,$5,$6,$7,NOW()+INTERVAL '10 years')`,
       [req.auth.sub, address.name, address.phone, address.address, address.city, address.pincode, address.isDefault || (index === 0 && !parsed.data.addresses.some(item => item.isDefault))])
     }
     const result = await client.query('SELECT * FROM user_addresses WHERE user_id=$1 ORDER BY is_default DESC,created_at DESC', [req.auth.sub])

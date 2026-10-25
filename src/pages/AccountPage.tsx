@@ -1,5 +1,5 @@
 import React, { useState, useEffect, FormEvent } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import {
   Package,
   User,
@@ -67,6 +67,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
   toggleWishlist,
   customerType
 }) => {
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const currentTab = (searchParams.get('tab') as TabKey) || 'orders'
 
@@ -115,8 +116,20 @@ export const AccountPage: React.FC<AccountPageProps> = ({
 
     setOrdersLoading(true)
     fetchUserOrders(currentUser.email, currentUser.id)
-      .then(userOrders => { if (!cancelled) setOrders(userOrders) })
-      .catch(err => console.error('Failed to fetch user orders:', err))
+      .then(userOrders => {
+        if (cancelled) return
+        let cached: ApiOrder[] = []
+        try { cached = JSON.parse(localStorage.getItem('abm_orders') || '[]').filter((order: ApiOrder) => order.userId === currentUser.id) } catch {}
+        const byId = new Map(cached.map(order => [order.id, order]))
+        userOrders.forEach(order => byId.set(order.id, order))
+        setOrders([...byId.values()].sort((a, b) => Date.parse(b.date) - Date.parse(a.date)))
+      })
+      .catch(err => {
+        console.error('Failed to fetch user orders:', err)
+        if (!cancelled) {
+          try { setOrders(JSON.parse(localStorage.getItem('abm_orders') || '[]').filter((order: ApiOrder) => order.userId === currentUser.id)) } catch { setOrders([]) }
+        }
+      })
       .finally(() => {
         if (!cancelled) setOrdersLoading(false)
       })
@@ -860,6 +873,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                         </div>
 
                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          {order.status !== 'cancelled' && <button type="button" className="btn btn-primary" style={{ fontSize: '11.5px', padding: '7px 12px', minHeight: '38px' }} onClick={() => { order.items.forEach(item => onAddToCart(item.productId, item.quantity)); navigate('/checkout') }}>Buy this order again</button>}
                           {canCancel && (
                             <button
                               type="button"
@@ -1102,7 +1116,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                   </div>
                 </div>
                 <button
-                  onClick={() => alert('SuperCoins will be applied automatically at checkout!')}
+                  onClick={() => setTab('orders')}
                   style={{
                     background: '#fff',
                     color: '#d97706',
@@ -1114,7 +1128,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                     cursor: 'pointer'
                   }}
                 >
-                  Redeem at Checkout
+                  View eligible orders
                 </button>
               </div>
 
@@ -1122,10 +1136,14 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                 How SuperCoins Work
               </h3>
               <ul style={{ fontSize: '13px', color: '#475569', lineHeight: 1.8, paddingLeft: '20px', margin: 0 }}>
-                <li>Earn 4 SuperCoins for every ₹100 spent on stationery products.</li>
-                <li>1 SuperCoin = ₹1 direct discount on your next wholesale order.</li>
-                <li>Redeem coins for free delivery passes and free gift cartons.</li>
+                <li>Earn 1 SuperCoin for every ₹100 spent on an order.</li>
+                <li>Coins from checkout orders appear in your balance and order history.</li>
+                <li>Your current balance is {coinBalance} coins. Checkout redemption is not enabled yet.</li>
               </ul>
+              <div style={{ marginTop: 20, borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
+                <h3 style={{ fontSize: 14, margin: '0 0 10px' }}>Recent coin activity</h3>
+                {orders.length ? orders.slice(0, 5).map(order => <div key={order.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #f1f5f9', fontSize: 12 }}><span>Order #{order.id}</span><b style={{ color: '#b45309' }}>+{order.coinsEarned || Math.floor(order.total / 100)} coins</b></div>) : <p style={{ color: '#64748b', fontSize: 12 }}>Place an order to start earning coins.</p>}
+              </div>
             </div>
           )}
 

@@ -12,11 +12,12 @@ import {
   type Product, type StationeryCategory, type CategorySlug, type ProductReview, type WholesaleTier, type SubCategory
 } from './data/products'
 import {
-  API_URL, fetchProducts, fetchStoreCategories, validateCoupon, createOrder, fetchUserOrders,
+  API_URL, fetchProducts, fetchStoreCategories, validateCoupon, createOrder, fetchUserOrders, fetchUserAddresses, saveUserAddressesRemote,
   fetchAdminOrders, adminLogin, customerLogin, signUp, verifyEmail, logout, getSession,
   saveProduct, deleteProduct, pingBackend, type ApiOrder
 } from './api'
 import { MapLocationPickerModal } from './components/MapLocationPickerModal'
+import { saveUserAddresses, type SavedAddress } from './utils/savedAddresses'
 import { DeliveryPartnerLiveMapModal } from './components/DeliveryPartnerLiveMapModal'
 import { AccountPage as AccountProfilePage } from './pages/AccountPage'
 import { HomePage as WholesaleHomePage } from './pages/HomePage'
@@ -2462,6 +2463,9 @@ function CheckoutPage({
   const [couponError, setCouponError] = useState('')
   const [paymentMode, setPaymentMode] = useState<'upi' | 'card' | 'cod'>('upi')
   const [placing, setPlacing] = useState(false)
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([])
+  const [addressPickerOpen, setAddressPickerOpen] = useState(false)
+  const [mapAddressPickerOpen, setMapAddressPickerOpen] = useState(false)
 
   // In-checkout auth state for guests
   const [authTab, setAuthTab] = useState<'signin' | 'signup'>('signin')
@@ -2473,10 +2477,23 @@ function CheckoutPage({
   const [authLoading, setAuthLoading] = useState(false)
 
   useEffect(() => {
-    if (currentUser) {
+    let cancelled = false
+    setSavedAddresses([])
+    if (currentUser?.id) {
       if (!name && currentUser.name) setName(currentUser.name)
       if (!email && currentUser.email) setEmail(currentUser.email)
+      fetchUserAddresses().then(addresses => {
+        if (cancelled) return
+        const valid = addresses.filter(item => Date.parse(item.expiresAt) > Date.now())
+        setSavedAddresses(valid)
+        const preferred = valid.find(item => item.isDefault) || valid[0]
+        if (preferred) {
+          setName(preferred.name); setPhone(preferred.phone); setAddress(preferred.address)
+          setCity(preferred.city); setPincode(preferred.pincode)
+        }
+      }).catch(() => {})
     }
+    return () => { cancelled = true }
   }, [currentUser])
 
   const subtotal = cart.reduce((sum, item) => {
@@ -2548,9 +2565,17 @@ function CheckoutPage({
       pincode,
       gstin,
     }
+    const matchingAddress = savedAddresses.find(item => item.address === address && item.city === city && item.pincode === pincode)
+    const nextAddresses: SavedAddress[] = [
+      { id: matchingAddress?.id || `address-${Date.now()}`, name, phone, address, city, pincode, isDefault: true },
+      ...savedAddresses.filter(item => item.id !== matchingAddress?.id && !(item.address === address && item.city === city && item.pincode === pincode)).map(item => ({ ...item, isDefault: false })),
+    ].slice(0, 20)
+    setSavedAddresses(nextAddresses)
+    saveUserAddresses(currentUser.id, nextAddresses)
     try {
+      await saveUserAddressesRemote(nextAddresses).catch(() => {})
       const res = await createOrder({ ...orderData, userId: currentUser?.id })
-      const existing = readStorage<ApiOrder[]>('abm_orders', [])
+      const existing = readStorage<ApiOrder[]>('abm_orders', []).filter(order => order.id !== res.order.id)
       localStorage.setItem('abm_orders', JSON.stringify([res.order, ...existing]))
       notifyCoinBalanceChanged()
       clearCart()
@@ -2568,7 +2593,7 @@ function CheckoutPage({
         tax: Math.round(subtotal * 0.18),
         discount,
         customerType,
-        coinsEarned: Math.round(grandTotal * 0.05),
+        coinsEarned: Math.floor(grandTotal / 100),
         customerName: name,
         email,
         phone,
@@ -2577,7 +2602,7 @@ function CheckoutPage({
         pincode,
         gstin,
       }
-      const existing = readStorage<ApiOrder[]>('abm_orders', [])
+      const existing = readStorage<ApiOrder[]>('abm_orders', []).filter(order => order.id !== localId)
       localStorage.setItem('abm_orders', JSON.stringify([localOrder, ...existing]))
       notifyCoinBalanceChanged()
       clearCart()
@@ -2744,7 +2769,18 @@ function CheckoutPage({
 
             {/* Shipping details */}
             <div className="checkout-card" style={{ marginBottom: '16px' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '18px' }}>1. Delivery Address</h2>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
+                <h2 style={{ fontSize: '18px', fontWeight: 800, margin: 0 }}>1. Delivery Address</h2>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {savedAddresses.length > 0 && <button type="button" className="btn btn-secondary" onClick={() => setAddressPickerOpen(value => !value)}>Saved addresses ({savedAddresses.length})</button>}
+                  <button type="button" className="btn btn-secondary" onClick={() => setMapAddressPickerOpen(true)}><MapPin size={15} /> Choose on map</button>
+                </div>
+              </div>
+              {addressPickerOpen && <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
+                {savedAddresses.map(item => <button key={item.id} type="button" className="btn btn-secondary" style={{ justifyContent: 'space-between', textAlign: 'left' }} onClick={() => { setName(item.name); setPhone(item.phone); setAddress(item.address); setCity(item.city); setPincode(item.pincode); setAddressPickerOpen(false) }}>
+                  <span><b>{item.name}</b> · {item.address}, {item.city} {item.pincode}</span>{item.isDefault && <small>Default</small>}
+                </button>)}
+              </div>}
               <div className="checkout-fields-grid">
                 <label style={{ display: 'grid', gap: '4px', fontSize: '12px', fontWeight: 700 }}>
                   Full Name *
@@ -2878,6 +2914,7 @@ function CheckoutPage({
           )}
         </div>
       </div>
+      <MapLocationPickerModal isOpen={mapAddressPickerOpen} onClose={() => setMapAddressPickerOpen(false)} currentPincode={pincode} onSelectAddress={location => { setAddress(location.address); setCity(location.city); setPincode(location.pincode); setMapAddressPickerOpen(false) }} lang={lang} />
     </div>
   )
 }
@@ -2898,9 +2935,12 @@ function InvoicePage({ products, currentUser, lang = 'en', onOpenTracking }: { p
       return () => { cancelled = true }
     }
     setLoading(true)
+    const localOrders = readStorage<ApiOrder[]>('abm_orders', [])
+    const localOrder = localOrders.find(item => item.id === orderId && item.userId === currentUser.id)
+    if (localOrder) setOrder(localOrder)
     fetchUserOrders(currentUser.email, currentUser.id)
-      .then(orders => { if (!cancelled) setOrder(orders.find(item => item.id === orderId) || null) })
-      .catch(() => { if (!cancelled) setOrder(null) })
+      .then(orders => { if (!cancelled) setOrder(orders.find(item => item.id === orderId) || localOrder || null) })
+      .catch(() => { if (!cancelled) setOrder(localOrder || null) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [currentUser, orderId])

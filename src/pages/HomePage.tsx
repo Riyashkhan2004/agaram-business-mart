@@ -37,6 +37,7 @@ export function HomePage({
 }: HomePageProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [selectedSubcategory, setSelectedSubcategory] = useState<string>('all')
+  const [selectedBrand, setSelectedBrand] = useState<string>('all')
   const [sortBy, setSortBy] = useState<'popular' | 'price-asc' | 'price-desc' | 'discount'>('popular')
   const [previewProduct, setPreviewProduct] = useState<Product | null>(null)
   const catalogRef = useRef<HTMLDivElement>(null)
@@ -59,12 +60,10 @@ export function HomePage({
   // Filtered & Sorted products
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
-      if (selectedCategory === 'all') return true
-      const matchesCat = p.category === selectedCategory
-      if (selectedSubcategory !== 'all' && (p as any).subcategory) {
-        return matchesCat && (p as any).subcategory === selectedSubcategory
-      }
-      return matchesCat
+      const matchesCat = selectedCategory === 'all' || p.category === selectedCategory
+      const matchesSubcategory = selectedSubcategory === 'all' || (p as any).subcategory === selectedSubcategory
+      const matchesBrand = selectedBrand === 'all' || p.brand === selectedBrand
+      return matchesCat && matchesSubcategory && matchesBrand
     }).sort((a, b) => {
       if (sortBy === 'price-asc') return a.price - b.price
       if (sortBy === 'price-desc') return b.price - a.price
@@ -75,7 +74,9 @@ export function HomePage({
       }
       return (b.reviewCount || 0) - (a.reviewCount || 0)
     })
-  }, [products, selectedCategory, selectedSubcategory, sortBy])
+  }, [products, selectedCategory, selectedSubcategory, selectedBrand, sortBy])
+
+  const brands = useMemo(() => [...new Set(products.map(product => product.brand).filter(Boolean))].sort(), [products])
 
   return (
     <div className="home-page-container container" style={{ paddingBottom: '30px' }}>
@@ -154,10 +155,18 @@ export function HomePage({
             </div>
           </div>
 
-          {/* Sort Dropdown */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '12px', color: 'var(--text-soft)', fontWeight: 700 }}>Sort by:</span>
+          {/* Wholesale catalog filters */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <select aria-label="Filter by sector and category" value={selectedCategory} onChange={event => { setSelectedCategory(event.target.value); setSelectedSubcategory('all') }} style={{ fontSize: '12px', fontWeight: 800, padding: '8px 12px', borderRadius: '10px', border: '1.5px solid #e2e8f0', background: '#fff', cursor: 'pointer', minWidth: 200 }}>
+              <option value="all">All Sectors &amp; Categories</option>
+              {categories.map(category => <option key={category.slug} value={category.slug}>{category.name}</option>)}
+            </select>
+            <select aria-label="Filter by brand" value={selectedBrand} onChange={event => setSelectedBrand(event.target.value)} style={{ fontSize: '12px', fontWeight: 800, padding: '8px 12px', borderRadius: '10px', border: '1.5px solid #e2e8f0', background: '#fff', cursor: 'pointer', minWidth: 150 }}>
+              <option value="all">All Brands</option>
+              {brands.map(brand => <option key={brand} value={brand}>{brand}</option>)}
+            </select>
             <select
+              aria-label="Sort products"
               value={sortBy}
               onChange={e => setSortBy(e.target.value as any)}
               style={{

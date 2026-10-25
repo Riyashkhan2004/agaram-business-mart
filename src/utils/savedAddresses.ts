@@ -10,7 +10,8 @@ export type SavedAddress = {
 
 type SavedAddressRecord = { expiresAt: number; addresses: SavedAddress[] }
 
-export const SAVED_ADDRESS_TTL_MS = 60 * 60 * 1000
+// Keep saved delivery addresses available between visits.
+export const SAVED_ADDRESS_TTL_MS = 10 * 365 * 24 * 60 * 60 * 1000
 
 const storageKey = (userId: string) => `abm_saved_addresses_${encodeURIComponent(userId)}`
 

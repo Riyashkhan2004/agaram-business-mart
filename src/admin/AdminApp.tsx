@@ -47,6 +47,7 @@ import {
   updateOrderStatus,
   deleteAdminOrder,
   saveAdminCategories,
+  deleteAdminCategory,
   pingBackend,
   adminLogin,
   getSession,
@@ -189,6 +190,21 @@ export function AdminApp() {
       return false
     } finally {
       setSavingCategories(false)
+    }
+  }
+
+  const handleDeleteCategory = async (slug: string) => {
+    try {
+      await deleteAdminCategory(slug)
+      setStoreCategories(current => current.filter(category => category.slug !== slug))
+      window.dispatchEvent(new CustomEvent('abm_categories_updated'))
+      localStorage.setItem('abm_categories_refresh', String(Date.now()))
+      setStatusMessage('Store category deleted.')
+      window.setTimeout(() => setStatusMessage(''), 4000)
+      return true
+    } catch (err) {
+      setStatusMessage(`Could not delete category: ${err instanceof Error ? err.message : 'Please try again.'}`)
+      return false
     }
   }
 
@@ -1079,7 +1095,7 @@ export function AdminApp() {
           )}
 
           {currentTab === 'storefront' && (
-            <StorefrontCategories categories={storeCategories} saving={savingCategories} onSave={handleSaveCategories} />
+            <StorefrontCategories categories={storeCategories} saving={savingCategories} onSave={handleSaveCategories} onDelete={handleDeleteCategory} />
           )}
 
           {/* TAB 3: CUSTOMER ORDERS */}
