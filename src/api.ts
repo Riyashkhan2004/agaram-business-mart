@@ -1,9 +1,11 @@
 import { products as localProducts, activeCoupons, type Product, type StationeryCategory } from './data/products'
 import type { SavedAddress } from './utils/savedAddresses'
 
-// In production, send API requests through the site's origin so Netlify can
-// proxy them to Render without browser CORS failures. Vite proxies /api in dev.
-export const API_URL = (import.meta.env.DEV ? (import.meta.env.VITE_API_URL || '') : window.location.origin).replace(/\/$/, '')
+// Production calls the live API directly; do not let an old Netlify
+// VITE_API_URL override point the frontend at the retired Render service.
+export const API_URL = (import.meta.env.DEV
+  ? (import.meta.env.VITE_API_URL || 'http://localhost:4000')
+  : 'https://agaram-business-mart-new.onrender.com').replace(/\/$/, '')
 
 export type ApiOrder = {
   id: string
