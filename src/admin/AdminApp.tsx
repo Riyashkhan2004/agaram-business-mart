@@ -34,6 +34,7 @@ import {
 } from 'lucide-react'
 import {
   API_URL,
+  ApiError,
   fetchProducts,
   fetchStoreCategories,
   fetchAdminProducts,
@@ -45,6 +46,7 @@ import {
   fetchAdminUsers,
   fetchAdminStats,
   updateOrderStatus,
+  updateOrderDetails,
   deleteAdminOrder,
   saveAdminCategories,
   deleteAdminCategory,
@@ -59,6 +61,27 @@ import {
 import { categories as defaultCategories, mergeStoreCategories, brands, money, type Product, type CategorySlug, type StationeryCategory, getProductGallery, getProductTiers } from '../data/products'
 import { StorefrontCategories } from './StorefrontCategories'
 import { downloadProductSpreadsheetTemplate, parseProductSpreadsheet, type SpreadsheetProduct } from './productSpreadsheet'
+
+function downloadOrdersCsv(orders: ApiOrder[]) {
+  const escape = (value: unknown) => {
+    const raw = String(value ?? '')
+    const safe = /^[\s]*[=+\-@]/.test(raw) ? `'${raw}` : raw
+    return `"${safe.replace(/"/g, '""')}"`
+  }
+  const header = ['Order ID', 'Date', 'Customer', 'Email', 'Phone', 'Address', 'City', 'Pincode', 'GSTIN', 'Items', 'Subtotal', 'Coupon', 'Discount', 'Delivery fee', 'Tax', 'Total', 'Status', 'Payment method', 'Payment status', 'Courier', 'Tracking number', 'Tracking URL', 'Admin notes']
+  const rows = orders.map(order => [
+    order.id, order.date, order.customerName, order.email, order.phone, order.address, order.city, order.pincode, order.gstin,
+    order.items.map(item => `${item.name || item.sku || item.productId} x ${item.quantity}`).join('; '), order.subtotal, order.couponCode, order.discount, order.deliveryFee, order.tax, order.total,
+    order.status, order.paymentMethod, order.paymentStatus, order.shippingProvider, order.trackingNumber, order.trackingUrl, order.adminNotes,
+  ])
+  const csv = [header, ...rows].map(row => row.map(escape).join(',')).join('\r\n')
+  const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `agaram-orders-${new Date().toISOString().slice(0, 10)}.csv`
+  link.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
 
 type AdminTab = 'dashboard' | 'products' | 'storefront' | 'orders' | 'customers' | 'database'
 
@@ -145,7 +168,13 @@ export function AdminApp() {
       .then(res => {
         if (res && res.role === 'admin') setAuth(true)
       })
-      .catch(() => {})
+      .catch(error => {
+        if (error instanceof ApiError && error.status === 401 && localStorage.getItem('abm_admin_token')) {
+          localStorage.removeItem('abm_admin_token')
+          setAuth(false)
+          setLoginError('Your admin session belongs to the previous database. Sign in again to load orders from the connected Neon database.')
+        }
+      })
   }, [])
 
   // Load all live data from Backend & Neon DB
@@ -170,7 +199,16 @@ export function AdminApp() {
     setStoreCategories(mergeStoreCategories(cats))
     setOrders(ords)
     if (ordersResult.status === 'rejected') {
-      setOrdersLoadError(ordersResult.reason instanceof Error ? ordersResult.reason.message : 'Orders could not be loaded.')
+      const error = ordersResult.reason
+      if (error instanceof ApiError && error.status === 401) {
+        localStorage.removeItem('abm_admin_token')
+        setAuth(false)
+        setLoginError('Your admin session belongs to the previous database. Sign in again to load orders from the connected Neon database.')
+        setOrders([])
+        setOrdersLoadError('Your admin session expired when the database connection changed. Sign in again and sync the live database.')
+      } else {
+        setOrdersLoadError(error instanceof Error ? error.message : 'Orders could not be loaded.')
+      }
     }
     setUsers(usrs)
     setStats(st)
@@ -464,6 +502,7 @@ export function AdminApp() {
     setStatusMessage(`Order #${orderId} marked as ${status.toUpperCase()}!`)
     try {
       await updateOrderStatus(orderId, status)
+      await refreshAllData()
       setTimeout(() => setStatusMessage(''), 3000)
     } catch (err: any) {
       alert(`Error updating order status: ${err.message}`)
@@ -482,6 +521,25 @@ export function AdminApp() {
     } catch (err: any) {
       alert(`Failed to delete order: ${err.message}`)
       refreshAllData()
+    }
+  }
+
+  const handleSaveOrderDetails = async () => {
+    if (!viewingOrder) return
+    try {
+      const { order } = await updateOrderDetails(viewingOrder.id, {
+        paymentStatus: viewingOrder.paymentStatus,
+        shippingProvider: viewingOrder.shippingProvider,
+        trackingNumber: viewingOrder.trackingNumber,
+        trackingUrl: viewingOrder.trackingUrl,
+        adminNotes: viewingOrder.adminNotes,
+      })
+      setViewingOrder(order)
+      setOrders(previous => previous.map(item => item.id === order.id ? order : item))
+      setStatusMessage(`Order #${order.id} details saved.`)
+      window.setTimeout(() => setStatusMessage(''), 3000)
+    } catch (error) {
+      alert(`Could not save order details: ${error instanceof Error ? error.message : 'Please retry.'}`)
     }
   }
 
@@ -1154,8 +1212,9 @@ export function AdminApp() {
                     <option value="cancelled">Cancelled</option>
                   </select>
                 </div>
-                <div style={{ fontSize: '12px', color: 'var(--admin-text-soft)' }}>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', fontSize: '12px', color: 'var(--admin-text-soft)' }}>
                   Showing {filteredOrders.length} of {orders.length} orders
+                  <button className="admin-btn admin-btn-secondary" onClick={() => downloadOrdersCsv(filteredOrders)} disabled={!filteredOrders.length}><Download size={14} /> Export CSV</button>
                 </div>
               </div>
 
@@ -1918,7 +1977,27 @@ export function AdminApp() {
                   <div style={{ fontSize: '12.5px', marginTop: '4px' }}>
                     {[viewingOrder.address, viewingOrder.city, viewingOrder.pincode].filter(Boolean).join(', ') || 'Address not provided'}
                   </div>
+                  {viewingOrder.gstin && <div style={{ fontSize: '12px', marginTop: '6px' }}>GSTIN: {viewingOrder.gstin}</div>}
                 </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px', marginBottom: '14px' }}>
+                <div style={{ background: 'var(--admin-bg)', padding: '12px', borderRadius: '8px' }}>
+                  <b style={{ fontSize: '11px', textTransform: 'uppercase' }}>Payment</b>
+                  <div style={{ fontSize: '12px', marginTop: '5px' }}>Method: {(viewingOrder.paymentMethod || 'cod').toUpperCase()}</div>
+                  <select className="admin-input" value={viewingOrder.paymentStatus || 'due_on_delivery'} onChange={event => setViewingOrder({ ...viewingOrder, paymentStatus: event.target.value as ApiOrder['paymentStatus'] })} style={{ marginTop: '7px', width: '100%' }}>
+                    <option value="pending">Payment pending</option><option value="paid">Paid</option><option value="failed">Failed</option><option value="due_on_delivery">Due on delivery</option><option value="refunded">Refunded</option>
+                  </select>
+                </div>
+                <div style={{ background: 'var(--admin-bg)', padding: '12px', borderRadius: '8px' }}>
+                  <b style={{ fontSize: '11px', textTransform: 'uppercase' }}>Shipment tracking</b>
+                  <input className="admin-input" placeholder="Courier / carrier" value={viewingOrder.shippingProvider || ''} onChange={event => setViewingOrder({ ...viewingOrder, shippingProvider: event.target.value })} style={{ marginTop: '7px', width: '100%' }} />
+                  <input className="admin-input" placeholder="Tracking number" value={viewingOrder.trackingNumber || ''} onChange={event => setViewingOrder({ ...viewingOrder, trackingNumber: event.target.value })} style={{ marginTop: '7px', width: '100%' }} />
+                  <input className="admin-input" placeholder="Tracking URL (optional)" value={viewingOrder.trackingUrl || ''} onChange={event => setViewingOrder({ ...viewingOrder, trackingUrl: event.target.value })} style={{ marginTop: '7px', width: '100%' }} />
+                </div>
+                <label style={{ gridColumn: '1 / -1', fontSize: '11px', fontWeight: 800 }}>Private order notes
+                  <textarea className="admin-input" rows={3} value={viewingOrder.adminNotes || ''} onChange={event => setViewingOrder({ ...viewingOrder, adminNotes: event.target.value })} style={{ display: 'block', marginTop: '6px', width: '100%' }} />
+                </label>
               </div>
 
               <div style={{ marginTop: '10px' }}>
@@ -1940,9 +2019,9 @@ export function AdminApp() {
                       >
                         <div>
                           <b>{it.name || prod?.name || `Product #${it.productId}`}</b>
-                          <div style={{ fontSize: '11px', color: 'var(--admin-text-soft)' }}>{it.sku && `SKU: ${it.sku} · `}Qty: {it.quantity} · Unit price: {money(it.price ?? prod?.price ?? 0)}</div>
+                          <div style={{ fontSize: '11px', color: 'var(--admin-text-soft)' }}>{it.sku && `SKU: ${it.sku} · `}Qty: {it.quantity} · Unit price: {money(it.price ?? prod?.price ?? 0)} · GST {it.gst ?? 0}%{it.discount ? ` · Discount: ${money(it.discount)}` : ''}</div>
                         </div>
-                        <div style={{ fontWeight: 800 }}>{money((it.price ?? prod?.price ?? 0) * it.quantity)}</div>
+                        <div style={{ fontWeight: 800 }}>{money(it.lineTotal ?? (it.price ?? prod?.price ?? 0) * it.quantity)}</div>
                       </div>
                     )
                   })}
@@ -1950,11 +2029,14 @@ export function AdminApp() {
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--admin-line)', paddingTop: '14px', marginTop: '10px' }}>
-                <span style={{ fontSize: '16px', fontWeight: 800 }}>Grand Total:</span>
+                <div><div style={{ fontSize: '12px' }}>Subtotal {money(viewingOrder.subtotal)}{viewingOrder.couponCode ? ` · ${viewingOrder.couponCode}` : ''} · Discount {money(viewingOrder.discount)} · Delivery {money(viewingOrder.deliveryFee || 0)} · GST {money(viewingOrder.tax)}</div><b style={{ fontSize: '16px' }}>Grand Total:</b></div>
                 <span style={{ fontSize: '22px', fontWeight: 900, color: 'var(--admin-primary)' }}>{money(viewingOrder.total)}</span>
               </div>
+              {viewingOrder.customerNotes && <p style={{ fontSize: '12px', marginTop: '12px' }}><b>Customer note:</b> {viewingOrder.customerNotes}</p>}
+              {viewingOrder.statusHistory?.length ? <div style={{ marginTop: '14px' }}><b style={{ fontSize: '12px' }}>Order timeline</b>{viewingOrder.statusHistory.map((event, index) => <div key={`${event.at}-${index}`} style={{ fontSize: '11px', marginTop: '5px', color: 'var(--admin-text-soft)' }}>{new Date(event.at).toLocaleString('en-IN')} · {event.status.toUpperCase()}{event.note ? ` · ${event.note}` : ''}</div>)}</div> : null}
             </div>
             <div className="admin-modal-footer">
+              <button onClick={handleSaveOrderDetails} className="admin-btn admin-btn-secondary">Save order details</button>
               <button onClick={() => window.open(`/invoice/${viewingOrder.id}`, '_blank')} className="admin-btn admin-btn-primary">
                 <Printer size={15} /> Print Full GST Tax Invoice
               </button>

@@ -3,8 +3,11 @@
   command = "npm run build"
   publish = "dist"
 
-[build.environment]
-  VITE_API_URL = "https://agaram-business-mart.onrender.com"
+[[redirects]]
+  from = "/api/*"
+  to = "https://agaram-business-mart-new.onrender.com/api/:splat"
+  status = 200
+  force = true
 
 [[redirects]]
   from = "/admin"

@@ -1,17 +1,22 @@
 import { products as localProducts, activeCoupons, type Product, type StationeryCategory } from './data/products'
 import type { SavedAddress } from './utils/savedAddresses'
 
-export const API_URL = (import.meta.env.VITE_API_URL || 'https://agaram-business-mart.onrender.com').replace(/\/$/, '')
+// In production, send API requests through the site's origin so Netlify can
+// proxy them to Render without browser CORS failures. Vite proxies /api in dev.
+export const API_URL = (import.meta.env.DEV ? (import.meta.env.VITE_API_URL || '') : window.location.origin).replace(/\/$/, '')
 
 export type ApiOrder = {
   id: string
   userId?: string
   date: string
-  items: { productId: number; quantity: number; name?: string; sku?: string; price?: number; gst?: number }[]
+  items: { productId: number; quantity: number; name?: string; sku?: string; price?: number; gst?: number; discount?: number; lineTotal?: number; tax?: number }[]
   total: number
   subtotal: number
   tax: number
   discount: number
+  couponCode?: string
+  deliveryFee?: number
+  pricingVersion?: number
   customerType: 'retail' | 'wholesale'
   coinsEarned: number
   customerName: string
@@ -22,6 +27,15 @@ export type ApiOrder = {
   pincode: string
   gstin?: string
   status?: string
+  paymentMethod?: 'upi' | 'card' | 'cod'
+  paymentStatus?: 'pending' | 'paid' | 'failed' | 'due_on_delivery' | 'refunded'
+  shippingProvider?: string
+  trackingNumber?: string
+  trackingUrl?: string
+  customerNotes?: string
+  adminNotes?: string
+  statusHistory?: { status: string; at: string; note?: string }[]
+  updatedAt?: string
 }
 
 export type ApiUser = {
@@ -43,6 +57,13 @@ export type AdminStats = {
   deliveredOrders: number
   revenue: number
   customers: number
+}
+
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message)
+    this.name = 'ApiError'
+  }
 }
 
 async function request<T>(route: string, options: RequestInit = {}): Promise<T> {
@@ -71,7 +92,7 @@ async function request<T>(route: string, options: RequestInit = {}): Promise<T> 
     ]
     const detail = validationMessages.length ? ` — ${validationMessages.join('; ')}` : ''
     const reference = body.reference ? ` (Reference ${body.reference})` : ''
-    throw new Error(`${body.error || `Request failed (${response.status})`}${detail}${reference}`)
+    throw new ApiError(`${body.error || `Request failed (${response.status})`}${detail}${reference}`, response.status)
   }
   return body as T
 }
@@ -188,6 +209,9 @@ export const createOrder = (order: {
   city: string
   pincode: string
   customerType: 'retail' | 'wholesale'
+  paymentMethod?: 'upi' | 'card' | 'cod'
+  customerNotes?: string
+  couponCode?: string
   gstin?: string
   userId?: string
 }) =>
@@ -209,6 +233,9 @@ export const fetchAdminOrders = () =>
 
 export const updateOrderStatus = (orderId: string, status: string) =>
   request<{ success: boolean; order: any }>(`/api/admin/orders/${orderId}/status`, { method: 'PATCH', body: JSON.stringify({ status }) })
+
+export const updateOrderDetails = (orderId: string, details: Pick<ApiOrder, 'paymentStatus' | 'shippingProvider' | 'trackingNumber' | 'trackingUrl' | 'adminNotes'>) =>
+  request<{ order: ApiOrder }>(`/api/admin/orders/${encodeURIComponent(orderId)}/details`, { method: 'PATCH', body: JSON.stringify(details) })
 
 export const deleteAdminOrder = (orderId: string) =>
   request<{ success: boolean }>(`/api/admin/orders/${orderId}`, { method: 'DELETE' })
