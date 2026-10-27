@@ -108,7 +108,10 @@ const orderSchema = z.object({
   address: z.string().trim().min(5).max(500), city: z.string().trim().min(1).max(100),
   pincode: z.string().trim().regex(/^\d{6}$/), gstin: z.string().trim().max(20).optional(),
   paymentMethod: z.literal('cod').default('cod'), customerNotes: z.string().trim().max(1000).optional(),
+  coinsToRedeem: z.number().int().min(0).max(1_000_000_000).default(0).refine(value => value % 500 === 0, 'Coins must be redeemed in 500-coin groups.'),
+  deliveryLatitude: z.number().min(-90).max(90).optional(), deliveryLongitude: z.number().min(-180).max(180).optional(),
 }).refine(order => new Set(order.items.map(item => item.productId)).size === order.items.length, 'Each product should appear once')
+  .refine(order => (order.deliveryLatitude === undefined) === (order.deliveryLongitude === undefined), 'Both delivery coordinates are required.')
 const orderDetailsSchema = z.object({
   paymentStatus: z.enum(['pending', 'paid', 'failed', 'due_on_delivery', 'refunded']).optional(),
   shippingProvider: z.string().trim().max(120).optional(), trackingNumber: z.string().trim().max(160).optional(),
@@ -125,6 +128,8 @@ const savedAddressesSchema = z.object({
     address: z.string().trim().min(5).max(500),
     city: z.string().trim().min(1).max(100),
     pincode: z.string().trim().regex(/^\d{6}$/),
+    latitude: z.number().min(-90).max(90).optional(),
+    longitude: z.number().min(-180).max(180).optional(),
     isDefault: z.boolean().default(false),
   })).max(20),
 })
@@ -795,7 +800,7 @@ app.delete('/api/admin/products/:id', authorize('admin'), async (req, res) => {
   res.json({ deleted: true })
 })
 
-const addressFromRow = row => ({ id: row.id, name: row.name, phone: row.phone, address: row.address, city: row.city, pincode: row.pincode, isDefault: row.is_default, expiresAt: null })
+const addressFromRow = row => ({ id: row.id, name: row.name, phone: row.phone, address: row.address, city: row.city, pincode: row.pincode, latitude: row.latitude == null ? undefined : Number(row.latitude), longitude: row.longitude == null ? undefined : Number(row.longitude), isDefault: row.is_default, expiresAt: null })
 app.get('/api/addresses', authorize('customer'), async (req, res) => {
   const result = await pool.query('SELECT * FROM user_addresses WHERE user_id=$1 ORDER BY is_default DESC,created_at DESC', [req.auth.sub])
   res.json(result.rows.map(addressFromRow))
@@ -810,9 +815,9 @@ app.put('/api/addresses', authorize('customer'), async (req, res) => {
     await client.query('DELETE FROM user_addresses WHERE user_id=$1', [req.auth.sub])
     for (let index = 0; index < parsed.data.addresses.length; index += 1) {
       const address = parsed.data.addresses[index]
-      await client.query(`INSERT INTO user_addresses(user_id,name,phone,address,city,pincode,is_default,expires_at)
-      VALUES($1,$2,$3,$4,$5,$6,$7,NULL)`,
-      [req.auth.sub, address.name, address.phone, address.address, address.city, address.pincode, address.isDefault || (index === 0 && !parsed.data.addresses.some(item => item.isDefault))])
+      await client.query(`INSERT INTO user_addresses(user_id,name,phone,address,city,pincode,is_default,expires_at,latitude,longitude)
+      VALUES($1,$2,$3,$4,$5,$6,$7,NULL,$8,$9)`,
+      [req.auth.sub, address.name, address.phone, address.address, address.city, address.pincode, address.isDefault || (index === 0 && !parsed.data.addresses.some(item => item.isDefault)), address.latitude ?? null, address.longitude ?? null])
     }
     const result = await client.query('SELECT * FROM user_addresses WHERE user_id=$1 ORDER BY is_default DESC,created_at DESC', [req.auth.sub])
     await client.query('COMMIT')
@@ -838,6 +843,10 @@ app.post('/api/orders', async (req, res) => {
     await client.query('BEGIN')
 
     let userId = sessionUser?.sub
+    if (customer.coinsToRedeem > 0 && !userId) {
+      await client.query('ROLLBACK')
+      return res.status(401).json({ error: 'Sign in to redeem Agaram coins.' })
+    }
     if (!userId) {
       // Guest checkout must not attach an order to an existing account just because
       // the guest typed that account's email address.
@@ -872,7 +881,18 @@ app.post('/api/orders', async (req, res) => {
       lines.push({ item, product, unitCents, lineCents })
     }
 
-    const discountCents = 0
+    const coinsToRedeem = customer.coinsToRedeem || 0
+    const maximumRedeemableCoins = Math.floor(subtotalCents / 2000) * 500
+    if (coinsToRedeem > maximumRedeemableCoins) {
+      await client.query('ROLLBACK')
+      return res.status(400).json({ error: 'You can use up to 500 coins for each ₹20 of product subtotal.' })
+    }
+    const coins = coinsToRedeem ? await client.query('SELECT coin_balance FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE', [userId]) : { rows: [] }
+    if (coinsToRedeem > Number(coins.rows[0]?.coin_balance || 0)) {
+      await client.query('ROLLBACK')
+      return res.status(409).json({ error: 'Your coin balance changed. Refresh checkout and try again.' })
+    }
+    const discountCents = Math.floor(coinsToRedeem / 500) * 2000
     const deliveryFeeCents = subtotalCents >= 49900 ? 0 : 4900
     let allocatedDiscountCents = 0
     let taxCents = 0
@@ -890,10 +910,16 @@ app.post('/api/orders', async (req, res) => {
     const orderNo = `ABM${Date.now().toString(36).toUpperCase()}${randomUUID().slice(0,4).toUpperCase()}`
     const paymentStatus = customer.paymentMethod === 'cod' ? 'due_on_delivery' : 'pending'
     const initialHistory = [{ status: 'received', at: new Date().toISOString(), note: 'Order placed' }]
-    const inserted = await client.query(`INSERT INTO orders(order_no,user_id,customer_name,phone,email,address,city,pincode,gstin,subtotal,discount,delivery_fee,tax,total,customer_type,pricing_version,payment_method,payment_status,customer_notes,status_history)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
-      [orderNo, userId, customer.customerName, customer.phone, customer.email || sessionUser?.email || null, customer.address, customer.city, customer.pincode, customer.gstin || null, subtotalCents/100, discountCents/100, deliveryFeeCents/100, taxCents/100, (subtotalCents+deliveryFeeCents)/100, customer.customerType, 2, customer.paymentMethod, paymentStatus, customer.customerNotes || null, JSON.stringify(initialHistory)])
+    const inserted = await client.query(`INSERT INTO orders(order_no,user_id,customer_name,phone,email,address,city,pincode,gstin,subtotal,discount,delivery_fee,tax,total,customer_type,pricing_version,payment_method,payment_status,customer_notes,status_history,coins_redeemed,delivery_latitude,delivery_longitude)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING *`,
+      [orderNo, userId, customer.customerName, customer.phone, customer.email || sessionUser?.email || null, customer.address, customer.city, customer.pincode, customer.gstin || null, subtotalCents/100, discountCents/100, deliveryFeeCents/100, taxCents/100, (subtotalCents-discountCents+deliveryFeeCents)/100, customer.customerType, 2, customer.paymentMethod, paymentStatus, customer.customerNotes || null, JSON.stringify(initialHistory), coinsToRedeem, customer.deliveryLatitude ?? null, customer.deliveryLongitude ?? null])
     const order = inserted.rows[0]
+
+    if (coinsToRedeem > 0) {
+      const updatedBalance = await client.query('UPDATE users SET coin_balance=coin_balance-$2,updated_at=NOW() WHERE id=$1 RETURNING coin_balance', [userId, coinsToRedeem])
+      await client.query(`INSERT INTO coin_transactions(user_id,amount,balance_after,reason)
+        VALUES($1,$2,$3,$4)`, [userId, -coinsToRedeem, Number(updatedBalance.rows[0].coin_balance), `Redeemed on order ${orderNo}`])
+    }
 
     for (const line of lines) {
       await client.query('UPDATE products SET stock=stock-$1,updated_at=NOW() WHERE id=$2', [line.item.quantity, line.product.id])
@@ -930,7 +956,7 @@ async function cancelOrder(orderKey, ownerId) {
     await client.query('BEGIN')
     const values = ownerId ? [orderKey, ownerId] : [orderKey]
     const ownerClause = ownerId ? ' AND user_id=$2' : ''
-    const orderResult = await client.query(`SELECT id,status FROM orders WHERE (order_no=$1 OR id::text=$1)${ownerClause} FOR UPDATE`, values)
+    const orderResult = await client.query(`SELECT id,order_no,status,user_id,coins_redeemed,coins_refunded FROM orders WHERE (order_no=$1 OR id::text=$1)${ownerClause} FOR UPDATE`, values)
     if (!orderResult.rowCount) {
       const error = new Error('Order not found')
       error.status = 404
@@ -950,12 +976,21 @@ async function cancelOrder(orderKey, ownerId) {
       FROM order_items oi WHERE oi.order_id=$1 AND oi.product_id=p.id`, [order.id])
     await client.query(`UPDATE orders SET status='cancelled',updated_at=NOW(),
       status_history=status_history || jsonb_build_array(jsonb_build_object('status','cancelled','at',NOW(),'note','Order cancelled')) WHERE id=$1`, [order.id])
+    await refundOrderCoins(client, order)
     await client.query('COMMIT')
     return { success: true, status: 'cancelled' }
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {})
     throw error
   } finally { client.release() }
+}
+
+async function refundOrderCoins(client, order) {
+  const refundable = Math.max(0, Number(order.coins_redeemed || 0) - Number(order.coins_refunded || 0))
+  if (!refundable || !order.user_id) return
+  const balance = await client.query('UPDATE users SET coin_balance=coin_balance+$2,updated_at=NOW() WHERE id=$1 RETURNING coin_balance', [order.user_id, refundable])
+  await client.query('UPDATE orders SET coins_refunded=coins_redeemed WHERE id=$1', [order.id])
+  await client.query('INSERT INTO coin_transactions(user_id,amount,balance_after,reason) VALUES($1,$2,$3,$4)', [order.user_id, refundable, Number(balance.rows[0]?.coin_balance || 0), `Refund for cancelled order ${order.order_no}`])
 }
 
 app.patch('/api/orders/:id/cancel', authorize('customer'), async (req, res) => {
@@ -967,6 +1002,29 @@ app.patch('/api/orders/:id/cancel', authorize('customer'), async (req, res) => {
 })
 
 app.get('/api/admin/orders', authorize('admin'), async (_req, res) => res.json(await loadOrders('', [])))
+
+app.get('/api/orders/:id/driver-location', authorize('customer'), async (req, res) => {
+  const result = await pool.query(`SELECT o.status,o.delivery_latitude,o.delivery_longitude,o.driver_latitude,o.driver_longitude,o.driver_location_updated_at
+    FROM orders o WHERE (o.order_no=$1 OR o.id::text=$1) AND o.user_id=$2`, [req.params.id, req.auth.sub])
+  if (!result.rowCount) return res.status(404).json({ error: 'Order not found.' })
+  const order = result.rows[0]
+  if (order.status !== 'shipped') return res.status(409).json({ error: 'Live tracking is available while your order is on the way.' })
+  if (!order.driver_location_updated_at || Date.now() - new Date(order.driver_location_updated_at).getTime() > 120_000) {
+    return res.status(404).json({ error: 'The driver has not shared a recent location yet.' })
+  }
+  res.setHeader('Cache-Control', 'no-store')
+  res.json({ latitude: Number(order.driver_latitude), longitude: Number(order.driver_longitude), updatedAt: new Date(order.driver_location_updated_at).toISOString(), destinationLatitude: order.delivery_latitude == null ? null : Number(order.delivery_latitude), destinationLongitude: order.delivery_longitude == null ? null : Number(order.delivery_longitude) })
+})
+
+app.post('/api/admin/orders/:id/driver-location', authorize('admin'), async (req, res) => {
+  const parsed = z.object({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180) }).safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'A valid GPS location is required.' })
+  const result = await pool.query(`UPDATE orders SET driver_latitude=$2,driver_longitude=$3,driver_location_updated_at=NOW(),updated_at=NOW()
+    WHERE (order_no=$1 OR id::text=$1) AND status='shipped' RETURNING driver_location_updated_at`, [req.params.id, parsed.data.latitude, parsed.data.longitude])
+  if (!result.rowCount) return res.status(409).json({ error: 'Mark this order as shipped before sharing the live driver location.' })
+  res.setHeader('Cache-Control', 'no-store')
+  res.json({ success: true, updatedAt: new Date(result.rows[0].driver_location_updated_at).toISOString() })
+})
 
 app.patch('/api/admin/orders/:id/status', authorize('admin'), async (req, res) => {
   const { status } = req.body || {}

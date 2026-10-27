@@ -30,7 +30,9 @@ import {
   Layers,
   Star,
   ExternalLink,
-  Store
+  Store,
+  MapPin,
+  Navigation
 } from 'lucide-react'
 import {
   API_URL,
@@ -50,6 +52,7 @@ import {
   fetchAdminStats,
   updateOrderStatus,
   updateOrderDetails,
+  publishDriverLocation,
   deleteAdminOrder,
   saveAdminCategories,
   deleteAdminCategory,
@@ -131,7 +134,30 @@ export function AdminApp() {
   const [previewProduct, setPreviewProduct] = useState<Product | null>(null)
   const [previewActiveImageIdx, setPreviewActiveImageIdx] = useState(0)
   const [viewingOrder, setViewingOrder] = useState<ApiOrder | null>(null)
+  const [sharingLocationOrderId, setSharingLocationOrderId] = useState<string | null>(null)
+  const lastGpsPublishAtRef = useRef(0)
   const [statusMessage, setStatusMessage] = useState('')
+
+  useEffect(() => {
+    if (!sharingLocationOrderId) return
+    if (!navigator.geolocation) {
+      setStatusMessage('This device does not support GPS location sharing.')
+      setSharingLocationOrderId(null)
+      return
+    }
+    lastGpsPublishAtRef.current = 0
+    const watchId = navigator.geolocation.watchPosition(position => {
+      if (Date.now() - lastGpsPublishAtRef.current < 8000) return
+      lastGpsPublishAtRef.current = Date.now()
+      void publishDriverLocation(sharingLocationOrderId, position.coords.latitude, position.coords.longitude)
+        .then(() => setStatusMessage('Driver GPS is being shared with the customer.'))
+        .catch(error => setStatusMessage(error instanceof Error ? error.message : 'Could not share driver GPS.'))
+    }, error => {
+      setStatusMessage(error.code === error.PERMISSION_DENIED ? 'Allow location access in the browser to share driver GPS.' : 'Unable to read driver GPS. Check device location settings.')
+      setSharingLocationOrderId(null)
+    }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 })
+    return () => navigator.geolocation.clearWatch(watchId)
+  }, [sharingLocationOrderId])
 
   // File Upload input refs
   const addFileInputRef = useRef<HTMLInputElement>(null)
@@ -2054,7 +2080,7 @@ export function AdminApp() {
 
       {/* MODAL 4: VIEW ORDER & PRINT TAX INVOICE */}
       {viewingOrder && (
-        <div className="admin-modal-backdrop" onClick={() => setViewingOrder(null)}>
+        <div className="admin-modal-backdrop" onClick={() => { setViewingOrder(null); setSharingLocationOrderId(null) }}>
           <div className="admin-modal" style={{ maxWidth: '720px' }} onClick={e => e.stopPropagation()}>
             <div className="admin-modal-header">
               <div>
@@ -2063,7 +2089,7 @@ export function AdminApp() {
                   Placed on {new Date(viewingOrder.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
                 </div>
               </div>
-              <button onClick={() => setViewingOrder(null)} style={{ background: 'none', border: 'none', color: 'var(--admin-text-soft)', cursor: 'pointer' }}>
+              <button onClick={() => { setViewingOrder(null); setSharingLocationOrderId(null) }} style={{ background: 'none', border: 'none', color: 'var(--admin-text-soft)', cursor: 'pointer' }}>
                 <X size={20} />
               </button>
             </div>
@@ -2081,6 +2107,10 @@ export function AdminApp() {
                   <div style={{ fontSize: '12.5px', marginTop: '4px' }}>
                     {[viewingOrder.address, viewingOrder.city, viewingOrder.pincode].filter(Boolean).join(', ') || 'Address not provided'}
                   </div>
+                  <div style={{ height: 170, marginTop: 8, borderRadius: 8, overflow: 'hidden', background: '#e2e8f0' }}>
+                    <iframe title="Customer delivery location" width="100%" height="100%" loading="lazy" style={{ border: 0 }} src={viewingOrder.deliveryLatitude != null && viewingOrder.deliveryLongitude != null ? `https://maps.google.com/maps?q=${viewingOrder.deliveryLatitude},${viewingOrder.deliveryLongitude}&z=16&output=embed` : `https://maps.google.com/maps?q=${encodeURIComponent([viewingOrder.address, viewingOrder.city, viewingOrder.pincode].filter(Boolean).join(', '))}&z=15&output=embed`} />
+                  </div>
+                  <a href={viewingOrder.deliveryLatitude != null && viewingOrder.deliveryLongitude != null ? `https://www.google.com/maps/search/?api=1&query=${viewingOrder.deliveryLatitude},${viewingOrder.deliveryLongitude}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([viewingOrder.address, viewingOrder.city, viewingOrder.pincode].filter(Boolean).join(', '))}`} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, marginTop: 6, color: 'var(--admin-primary)' }}><MapPin size={13} /> Open in Google Maps</a>
                   {viewingOrder.gstin && <div style={{ fontSize: '12px', marginTop: '6px' }}>GSTIN: {viewingOrder.gstin}</div>}
                 </div>
               </div>
@@ -2100,6 +2130,8 @@ export function AdminApp() {
                   <label style={{ display: 'block', fontSize: '10px', color: 'var(--admin-text-soft)', marginTop: '8px' }}>Estimated arrival</label>
                   <input className="admin-input" aria-label="Estimated delivery time" type="datetime-local" value={toLocalDateTimeInput(viewingOrder.estimatedDeliveryAt)} onChange={event => setViewingOrder({ ...viewingOrder, estimatedDeliveryAt: event.target.value ? new Date(event.target.value).toISOString() : '' })} style={{ marginTop: '4px', width: '100%' }} />
                   <input className="admin-input" placeholder="Live location share link (optional)" aria-label="Driver live location link" value={viewingOrder.trackingUrl || ''} onChange={event => setViewingOrder({ ...viewingOrder, trackingUrl: event.target.value })} style={{ marginTop: '7px', width: '100%' }} />
+                  {viewingOrder.status === 'shipped' && <button type="button" className="admin-btn admin-btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: 10 }} onClick={() => { setStatusMessage(''); setSharingLocationOrderId(current => current === viewingOrder.id ? null : viewingOrder.id) }}><Navigation size={14} /> {sharingLocationOrderId === viewingOrder.id ? 'Stop sharing GPS' : 'Start sharing live GPS'}</button>}
+                  {sharingLocationOrderId === viewingOrder.id && <div style={{ fontSize: 11, marginTop: 6, color: 'var(--admin-text-soft)' }}>Keep this screen open while delivering. {statusMessage}</div>}
                 </div>
                 <label style={{ gridColumn: '1 / -1', fontSize: '11px', fontWeight: 800 }}>Private order notes
                   <textarea className="admin-input" rows={3} value={viewingOrder.adminNotes || ''} onChange={event => setViewingOrder({ ...viewingOrder, adminNotes: event.target.value })} style={{ display: 'block', marginTop: '6px', width: '100%' }} />
@@ -2136,7 +2168,7 @@ export function AdminApp() {
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--admin-line)', paddingTop: '14px', marginTop: '10px' }}>
-                <div><div style={{ fontSize: '12px' }}>Subtotal {money(viewingOrder.subtotal)} · Discount {money(viewingOrder.discount)} · Delivery {money(viewingOrder.deliveryFee || 0)} · GST {money(viewingOrder.tax)}</div><b style={{ fontSize: '16px' }}>Grand Total:</b></div>
+                <div><div style={{ fontSize: '12px' }}>Subtotal {money(viewingOrder.subtotal)} · Discount {money(viewingOrder.discount)}{viewingOrder.coinsRedeemed ? ` · Coins used ${viewingOrder.coinsRedeemed}` : ''} · Delivery {money(viewingOrder.deliveryFee || 0)} · GST {money(viewingOrder.tax)}</div><b style={{ fontSize: '16px' }}>Grand Total:</b></div>
                 <span style={{ fontSize: '22px', fontWeight: 900, color: 'var(--admin-primary)' }}>{money(viewingOrder.total)}</span>
               </div>
               {viewingOrder.customerNotes && <p style={{ fontSize: '12px', marginTop: '12px' }}><b>Customer note:</b> {viewingOrder.customerNotes}</p>}

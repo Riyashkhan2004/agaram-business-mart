@@ -122,15 +122,15 @@ export function HomePage({
           </div>
           <div>
             <div style={{ fontSize: '13px', fontWeight: 900 }}>
-              {lang === 'ta' ? 'உடனடி விநியோகம் · 10 நிமிடத்தில் டெலிவரி' : 'Express Delivery · 10 Mins Dispatch to Doorstep'}
+              {lang === 'ta' ? 'உங்கள் டெலிவரியைக் கண்காணிக்கவும்' : 'Track your delivery'}
             </div>
             <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.85)' }}>
-              {lang === 'ta' ? 'நேரலை வரைபடத்தில் ரைடரைக் கண்காணிக்க கிளிக் செய்க' : 'Tap to track live delivery partner on GPS Map'}
+              {lang === 'ta' ? 'உங்கள் ஆர்டரில் நேரலை GPS-ஐ திறக்கவும்' : 'Open your shipped order to see the driver’s shared GPS location'}
             </div>
           </div>
         </div>
         <span style={{ fontSize: '11.5px', fontWeight: 900, background: '#ffffff', color: '#15803d', padding: '4px 12px', borderRadius: '20px' }}>
-          Track Map ➔
+          {lang === 'ta' ? 'ஆர்டர்கள்' : 'My orders'} ➔
         </span>
       </div>
 

@@ -21,12 +21,15 @@ export type ApiOrder = {
   pricingVersion?: number
   customerType: 'retail' | 'wholesale'
   coinsEarned: number
+  coinsRedeemed?: number
   customerName: string
   email: string
   phone: string
   address: string
   city: string
   pincode: string
+  deliveryLatitude?: number
+  deliveryLongitude?: number
   gstin?: string
   status?: string
   paymentMethod?: 'upi' | 'card' | 'cod'
@@ -242,6 +245,9 @@ export const createOrder = (order: {
   customerType: 'retail' | 'wholesale'
   paymentMethod?: 'cod'
   customerNotes?: string
+  coinsToRedeem?: number
+  deliveryLatitude?: number
+  deliveryLongitude?: number
   couponCode?: string
   gstin?: string
   userId?: string
@@ -267,6 +273,12 @@ export const updateOrderStatus = (orderId: string, status: string) =>
 
 export const updateOrderDetails = (orderId: string, details: Pick<ApiOrder, 'paymentStatus' | 'shippingProvider' | 'trackingNumber' | 'trackingUrl' | 'deliveryDriverName' | 'deliveryDriverPhone' | 'estimatedDeliveryAt' | 'adminNotes'>) =>
   request<{ order: ApiOrder }>(`/api/admin/orders/${encodeURIComponent(orderId)}/details`, { method: 'PATCH', body: JSON.stringify(details) })
+
+export type DriverLocation = { latitude: number; longitude: number; updatedAt: string; destinationLatitude?: number | null; destinationLongitude?: number | null }
+export const publishDriverLocation = (orderId: string, latitude: number, longitude: number) =>
+  request<{ success: boolean; updatedAt: string }>(`/api/admin/orders/${encodeURIComponent(orderId)}/driver-location`, { method: 'POST', body: JSON.stringify({ latitude, longitude }) })
+export const fetchDriverLocation = (orderId: string) =>
+  request<DriverLocation>(`/api/orders/${encodeURIComponent(orderId)}/driver-location`)
 
 export const deleteAdminOrder = (orderId: string) =>
   request<{ success: boolean }>(`/api/admin/orders/${orderId}`, { method: 'DELETE' })

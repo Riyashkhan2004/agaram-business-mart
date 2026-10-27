@@ -55,8 +55,8 @@ export function ClickableDealsBanner({ lang = 'en' }: ClickableDealsBannerProps)
         className="clickable-deals-scroll"
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-          gap: '14px',
+          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+          gap: '9px',
         }}
       >
         {deals.map((deal, idx) => (
@@ -66,17 +66,17 @@ export function ClickableDealsBanner({ lang = 'en' }: ClickableDealsBannerProps)
             className="clickable-deal-card"
             style={{
               background: deal.bg,
-              borderRadius: '18px',
-              padding: '18px 20px',
+              borderRadius: '14px',
+              padding: '12px',
               color: '#ffffff',
               display: 'flex',
               flexDirection: 'column',
               justifyContent: 'space-between',
-              minHeight: '140px',
+              minHeight: '116px',
               boxShadow: `0 10px 24px -4px ${deal.shadow}`,
               textDecoration: 'none',
               cursor: 'pointer',
-              transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+              transition: 'transform 0.2s ease, box-shadow 0.2s ease',
               position: 'relative',
               overflow: 'hidden',
             }}
@@ -97,10 +97,10 @@ export function ClickableDealsBanner({ lang = 'en' }: ClickableDealsBannerProps)
                   background: 'rgba(255, 255, 255, 0.25)',
                   backdropFilter: 'blur(8px)',
                   color: '#ffffff',
-                  fontSize: '10px',
+                  fontSize: '8px',
                   fontWeight: 900,
                   letterSpacing: '0.04em',
-                  padding: '3px 8px',
+                  padding: '3px 6px',
                   borderRadius: '6px',
                 }}
               >
@@ -108,9 +108,9 @@ export function ClickableDealsBanner({ lang = 'en' }: ClickableDealsBannerProps)
               </span>
               <h3
                 style={{
-                  fontSize: '17px',
+                  fontSize: '13px',
                   fontWeight: 900,
-                  margin: '8px 0 3px 0',
+                  margin: '6px 0 3px 0',
                   color: '#ffffff',
                   lineHeight: 1.25,
                 }}
@@ -119,7 +119,7 @@ export function ClickableDealsBanner({ lang = 'en' }: ClickableDealsBannerProps)
               </h3>
               <p
                 style={{
-                  fontSize: '11.5px',
+                  fontSize: '10px',
                   color: 'rgba(255, 255, 255, 0.92)',
                   margin: 0,
                   fontWeight: 600,
@@ -136,16 +136,16 @@ export function ClickableDealsBanner({ lang = 'en' }: ClickableDealsBannerProps)
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                marginTop: '16px',
+                marginTop: '8px',
               }}
             >
               <span
                 style={{
                   background: '#ffffff',
                   color: '#0f172a',
-                  fontSize: '11px',
+                  fontSize: '10px',
                   fontWeight: 900,
-                  padding: '5px 12px',
+                  padding: '4px 9px',
                   borderRadius: '20px',
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -155,7 +155,7 @@ export function ClickableDealsBanner({ lang = 'en' }: ClickableDealsBannerProps)
               >
                 {deal.cta} <ArrowRight size={12} />
               </span>
-              <div style={{ opacity: 0.9 }}>{deal.icon}</div>
+              <div style={{ opacity: 0.9, transform: 'scale(.72)', transformOrigin: 'right center' }}>{deal.icon}</div>
             </div>
           </Link>
         ))}

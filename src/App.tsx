@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, memo, type FormEvent, type ChangeEvent } from 'react'
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
-  Search, ShoppingCart, UserRound, Heart, ChevronDown, CheckCircle2,
+  Search, ShoppingCart, UserRound, Heart, ChevronDown, CheckCircle2, MessageCircle,
   MapPin, LogOut, Package, ChevronRight, Star, Clock, Sparkles,
   SlidersHorizontal, Trash2, ArrowRight, Printer, Share2, Tag, ShieldCheck,
   Truck, ArrowLeft, Plus, Minus, X, Check, Eye, Palette, AlertCircle, RefreshCw,
@@ -201,7 +201,6 @@ export default function App() {
   })
   const [products, setProducts] = useState<Product[]>(defaultProducts)
   const [storeCategories, setStoreCategories] = useState<StationeryCategory[]>(categories)
-  const [cartDrawerOpen, setCartDrawerOpen] = useState(false)
   const [themePickerOpen, setThemePickerOpen] = useState(false)
   const [userPincode, setUserPincode] = useState(() => readStorage('abm_pincode', '600001'))
   const [pincodeModalOpen, setPincodeModalOpen] = useState(false)
@@ -212,15 +211,14 @@ export default function App() {
   const [locationOwnerId, setLocationOwnerId] = useState<string | null>(null)
   const [mapPickerOpen, setMapPickerOpen] = useState(false)
   const [trackingModalOpen, setTrackingModalOpen] = useState(false)
-  const [activeTrackingOrder, setActiveTrackingOrder] = useState<{ id: string; address: string }>({
-    id: 'ABM-928174',
-    address: 'Main Road, Cuddalore - 607001'
-  })
+  const [activeTrackingOrder, setActiveTrackingOrder] = useState<{ id: string; address: string; latitude?: number; longitude?: number }>({ id: '', address: '' })
   const [selectedDeliveryLocation, setSelectedDeliveryLocation] = useState<{
     address: string
     city: string
     pincode: string
     label: string
+    latitude?: number
+    longitude?: number
   }>(() => ({
     address: 'Main Road, Cuddalore',
     city: 'Cuddalore',
@@ -355,7 +353,6 @@ export default function App() {
       }
       return [...prev, { productId, quantity: qty }]
     })
-    setCartDrawerOpen(true)
   }
 
   const updateCartQty = (productId: number, delta: number) => {
@@ -533,13 +530,13 @@ export default function App() {
               </Link>
 
               {/* Cart Trigger Button */}
-              <button className="header-action-btn" onClick={() => setCartDrawerOpen(true)} title="View Cart">
+              <Link to="/cart" className="header-action-btn" title="View Cart">
                 <div className="header-action-icon">
                   <ShoppingCart size={20} />
                   {totalCartCount > 0 && <span className="header-badge">{totalCartCount}</span>}
                 </div>
                 <span className="header-action-label">{t[lang].cart}</span>
-              </button>
+              </Link>
 
               {/* Account Link */}
               <Link to="/account" className="header-action-btn header-account-link" title="My Account">
@@ -590,13 +587,7 @@ export default function App() {
                 const currentQty = cart.find(item => item.productId === productId)?.quantity || 0
                 updateCartQty(productId, quantity - currentQty)
               }}
-              onOpenTracking={() => {
-                setActiveTrackingOrder({
-                  id: 'ABM-928174',
-                  address: `${selectedDeliveryLocation.address}, ${selectedDeliveryLocation.city} - ${selectedDeliveryLocation.pincode}`
-                })
-                setTrackingModalOpen(true)
-              }}
+              onOpenTracking={() => navigate('/account?tab=orders')}
             />
           } />
           <Route path="/category/:slug" element={
@@ -625,7 +616,7 @@ export default function App() {
               addToCart={addToCart}
               cart={cart}
               updateCartQty={updateCartQty}
-              openCartDrawer={() => setCartDrawerOpen(true)}
+              openCartDrawer={() => navigate('/cart')}
               lang={lang}
             />
           } />
@@ -658,6 +649,10 @@ export default function App() {
               clearCart={() => setCart([])}
               currentUser={currentUser}
               setCurrentUser={setCurrentUser}
+              coinBalance={coinBalance}
+              setCoinBalance={setCoinBalance}
+              selectedDeliveryLocation={selectedDeliveryLocation}
+              setSelectedDeliveryLocation={setSelectedDeliveryLocation}
               lang={lang}
             />
           } />
@@ -682,10 +677,9 @@ export default function App() {
               wishlist={wishlist}
               toggleWishlist={toggleWishlist}
               customerType={customerType}
-              onOpenTracking={(id, addr) => {
+              onOpenTracking={(id, addr, latitude, longitude) => {
                 setActiveTrackingOrder({
-                  id: id || 'ABM-928174',
-                  address: addr || `${selectedDeliveryLocation.address}, ${selectedDeliveryLocation.city} - ${selectedDeliveryLocation.pincode}`
+                  id, address: addr, latitude, longitude
                 })
                 setTrackingModalOpen(true)
               }}
@@ -700,10 +694,9 @@ export default function App() {
               products={products}
               currentUser={currentUser}
               lang={lang}
-              onOpenTracking={(id, addr) => {
+              onOpenTracking={(id, addr, latitude, longitude) => {
                 setActiveTrackingOrder({
-                  id: id || 'ABM-928174',
-                  address: addr || `${selectedDeliveryLocation.address}, ${selectedDeliveryLocation.city} - ${selectedDeliveryLocation.pincode}`
+                  id, address: addr, latitude, longitude
                 })
                 setTrackingModalOpen(true)
               }}
@@ -711,113 +704,6 @@ export default function App() {
           } />
         </Routes>
       </main>
-
-      {/* 5. SLIDE-OVER CART DRAWER */}
-      {cartDrawerOpen && (
-        <div className="drawer-backdrop" onClick={() => setCartDrawerOpen(false)}>
-          <div className="cart-drawer" onClick={e => e.stopPropagation()}>
-            <div className="drawer-header">
-              <div className="drawer-title">{t[lang].shoppingBag} ({totalCartCount})</div>
-              <button className="drawer-close" onClick={() => setCartDrawerOpen(false)}>
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Free Shipping Meter */}
-            <div className="shipping-meter">
-              <div className="shipping-meter-text">
-                <Truck size={15} style={{ color: 'var(--primary)' }} />
-                {cartSubtotal >= 499 ? (
-                  <span style={{ color: '#15803d' }}><b>{t[lang].freeDeliveryUnlocked}</b></span>
-                ) : (
-                  <span>{t[lang].addMoreForFreeDelivery.replace('{amount}', money(499 - cartSubtotal))}</span>
-                )}
-              </div>
-              <div className="shipping-meter-bar">
-                <div
-                  className="shipping-meter-fill"
-                  style={{ width: `${Math.min(100, (cartSubtotal / 499) * 100)}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Items */}
-            <div className="drawer-items">
-              {cart.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
-                  <div style={{ fontSize: '40px', marginBottom: '10px' }}>🛍️</div>
-                  <b style={{ fontSize: '16px', display: 'block', marginBottom: '6px' }}>{t[lang].emptyCart}</b>
-                  <p style={{ fontSize: '13px' }}>Discover cute pens, notebooks & aesthetic stationery!</p>
-                </div>
-              ) : (
-                cart.map(item => {
-                  const prod = products.find(p => p.id === item.productId)
-                  if (!prod) return null
-                  const price = unitPrice(prod, item.quantity, customerType)
-                  const itemTitle = lang === 'ta' && prod.nameTa ? prod.nameTa : prod.name
-                  return (
-                    <div key={item.productId} className="drawer-item">
-                      <img src={prod.image} alt={itemTitle} className="drawer-item-thumb" />
-                      <div>
-                        <div className="drawer-item-title">{itemTitle}</div>
-                        <div className="drawer-item-price">{money(price * item.quantity)}</div>
-                        <div style={{ fontSize: '10.5px', color: 'var(--text-soft)' }}>
-                          {money(price)} / {prod.unit}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
-                        <div className="qty-stepper">
-                          <button className="qty-btn" onClick={() => updateCartQty(item.productId, -1)}>
-                            <Minus size={12} />
-                          </button>
-                          <span className="qty-value">{item.quantity}</span>
-                          <button className="qty-btn" onClick={() => updateCartQty(item.productId, 1)}>
-                            <Plus size={12} />
-                          </button>
-                        </div>
-                        <button
-                          onClick={() => removeFromCart(item.productId)}
-                          style={{ color: 'var(--primary)', fontSize: '11px', fontWeight: 700 }}
-                        >
-                          {lang === 'ta' ? 'நீக்கு' : 'Remove'}
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })
-              )}
-            </div>
-
-            {/* Footer Summary */}
-            {cart.length > 0 && (
-              <div className="drawer-footer">
-                <div className="drawer-total-row">
-                  <span>{t[lang].subtotal}</span>
-                  <span>{money(cartSubtotal)}</span>
-                </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <Link
-                    to="/cart"
-                    className="btn btn-secondary"
-                    style={{ flex: 1 }}
-                    onClick={() => setCartDrawerOpen(false)}
-                  >
-                    {t[lang].viewCart}
-                  </Link>
-                  <Link
-                    to="/checkout"
-                    className="btn btn-primary"
-                    style={{ flex: 1.5 }}
-                    onClick={() => setCartDrawerOpen(false)}
-                  >
-                    {t[lang].checkout} <ArrowRight size={16} />
-                  </Link>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* 6. PINCODE MODAL (Amazon style) */}
       {pincodeModalOpen && (
@@ -855,7 +741,7 @@ export default function App() {
 
       {/* 7. INSTAMART STICKY FLOATING QUICK CART BAR (As in user's hand-drawn sketch) */}
       {totalCartCount > 0 && !['/cart', '/checkout'].includes(location.pathname) && !location.pathname.startsWith('/invoice') && (
-        <div className="instamart-bottom-cart-bar" onClick={() => setCartDrawerOpen(true)}>
+        <Link to="/cart" className="instamart-bottom-cart-bar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{ background: 'rgba(255,255,255,0.25)', borderRadius: '8px', padding: '4px 8px', fontSize: '13px', fontWeight: 900 }}>
               {totalCartCount} {totalCartCount === 1 ? 'ITEM' : 'ITEMS'}
@@ -870,7 +756,7 @@ export default function App() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13.5px', fontWeight: 900 }}>
             {lang === 'ta' ? 'கூடை காண்க' : 'View Cart'} <ArrowRight size={16} />
           </div>
-        </div>
+        </Link>
       )}
 
       {/* 8. INTERACTIVE MAP LOCATION PICKER MODAL (Leaflet / OpenStreetMap) */}
@@ -891,8 +777,14 @@ export default function App() {
         onClose={() => setTrackingModalOpen(false)}
         orderId={activeTrackingOrder.id}
         customerAddress={activeTrackingOrder.address}
+        deliveryLatitude={activeTrackingOrder.latitude}
+        deliveryLongitude={activeTrackingOrder.longitude}
         lang={lang}
       />
+
+      <a href="https://wa.me/917871096937?text=Hello%20Agaram%20Business%20Mart%20support" target="_blank" rel="noreferrer" aria-label="WhatsApp support at 7871096937" style={{ position: 'fixed', right: 16, bottom: 'calc(88px + env(safe-area-inset-bottom))', zIndex: 80, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 999, background: '#128c4a', color: '#fff', textDecoration: 'none', fontSize: 12, fontWeight: 800, boxShadow: '0 6px 20px rgba(18,140,74,.3)' }}>
+        <MessageCircle size={17} /> WhatsApp support
+      </a>
 
       {/* 8. NATIVE MOBILE BOTTOM NAVIGATION BAR */}
       <nav className="mobile-bottom-bar">
@@ -904,27 +796,16 @@ export default function App() {
           <span style={{ fontSize: '18px' }}>🗂️</span>
           <span>{lang === 'ta' ? 'பிரிவுகள்' : 'Categories'}</span>
         </Link>
-        <a href="#deals" onClick={(e) => {
-          if (location.pathname !== '/') {
-            navigate('/#deals')
-          } else {
-            const el = document.getElementById('deals')
-            if (el) el.scrollIntoView({ behavior: 'smooth' })
-          }
-        }} className="mobile-nav-btn">
-          <span style={{ fontSize: '18px' }}>⚡</span>
-          <span>{lang === 'ta' ? 'சலுகை' : 'Deals'}</span>
-        </a>
         <Link to="/wishlist" className={`mobile-nav-btn ${location.pathname === '/wishlist' ? 'active' : ''}`}>
           <span style={{ fontSize: '18px' }}>❤️</span>
           <span>{lang === 'ta' ? 'விருப்பம்' : 'Wishlist'}</span>
           {wishlist.length > 0 && <span className="mobile-nav-badge">{wishlist.length}</span>}
         </Link>
-        <button className="mobile-nav-btn" onClick={() => setCartDrawerOpen(true)}>
+        <Link to="/cart" className={`mobile-nav-btn ${location.pathname === '/cart' ? 'active' : ''}`}>
           <span style={{ fontSize: '18px' }}>🛒</span>
           <span>{lang === 'ta' ? 'கூடை' : 'Cart'}</span>
           {totalCartCount > 0 && <span className="mobile-nav-badge">{totalCartCount}</span>}
-        </button>
+        </Link>
         <Link to="/account" className={`mobile-nav-btn ${location.pathname === '/account' ? 'active' : ''}`}>
           <span style={{ fontSize: '18px' }}>👤</span>
           <span>{currentUser ? (lang === 'ta' ? 'கணக்கு' : 'Profile') : (lang === 'ta' ? 'உள்நுழை' : 'Account')}</span>
@@ -1194,11 +1075,10 @@ function HomePage({
           <span style={{ fontSize: '24px' }}>🛵</span>
           <div>
             <div style={{ fontSize: '13px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span>{lang === 'ta' ? 'டெலிவரி பார்ட்னர் கார்த்திக் ராஜா வழியில் உள்ளார்' : 'Delivery Partner Karthik Raja is on the way'}</span>
-              <span className="instamart-pulse-dot" />
+              <span>{lang === 'ta' ? 'உங்கள் டெலிவரியைக் கண்காணிக்கவும்' : 'Track your delivery'}</span>
             </div>
             <div style={{ fontSize: '11px', opacity: 0.9 }}>
-              {lang === 'ta' ? 'வருகை நேரம்: 8 நிமிடம் · நேரலை வரைபடத்தில் கண்காணிக்கவும்' : 'Arriving in 8 mins to your location · Tap to track on Live Map'}
+              {lang === 'ta' ? 'நேரலை GPS இருப்பிடத்தைப் பார்க்க ஆர்டர்கள் பக்கத்தைத் திறக்கவும்' : 'Open your shipped order to view the driver’s shared GPS location'}
             </div>
           </div>
         </div>
@@ -2421,7 +2301,7 @@ function CartPage({
    CHECKOUT PAGE (With GST Support for School / Institutional Orders)
    ========================================================================== */
 function CheckoutPage({
-  cart, products, customerType, userPincode, clearCart, currentUser, setCurrentUser, lang = 'en'
+  cart, products, customerType, userPincode, clearCart, currentUser, setCurrentUser, coinBalance, setCoinBalance, selectedDeliveryLocation, setSelectedDeliveryLocation, lang = 'en'
 }: {
   cart: CartItem[]
   products: Product[]
@@ -2430,6 +2310,10 @@ function CheckoutPage({
   clearCart: () => void
   currentUser: { id?: string; name?: string; email?: string; phone?: string } | null
   setCurrentUser: (u: { id?: string; name?: string; email?: string; phone?: string } | null) => void
+  coinBalance: number
+  setCoinBalance: (value: number) => void
+  selectedDeliveryLocation: { address: string; city: string; pincode: string; label: string; latitude?: number; longitude?: number }
+  setSelectedDeliveryLocation: (value: { address: string; city: string; pincode: string; label: string; latitude?: number; longitude?: number }) => void
   lang?: Language
 }) {
   const navigate = useNavigate()
@@ -2439,6 +2323,9 @@ function CheckoutPage({
   const [address, setAddress] = useState('')
   const [city, setCity] = useState('Chennai')
   const [pincode, setPincode] = useState(userPincode)
+  const [deliveryLatitude, setDeliveryLatitude] = useState<number | undefined>(selectedDeliveryLocation.latitude)
+  const [deliveryLongitude, setDeliveryLongitude] = useState<number | undefined>(selectedDeliveryLocation.longitude)
+  const [coinsToRedeem, setCoinsToRedeem] = useState(0)
   const [gstin, setGstin] = useState('')
   const paymentMode = 'cod' as const
   const [placing, setPlacing] = useState(false)
@@ -2490,12 +2377,17 @@ function CheckoutPage({
           setAddress(preferred.address)
           setCity(preferred.city)
           setPincode(preferred.pincode)
+          setDeliveryLatitude(preferred.latitude)
+          setDeliveryLongitude(preferred.longitude)
+          setSelectedDeliveryLocation({ address: preferred.address, city: preferred.city, pincode: preferred.pincode, label: preferred.isDefault ? 'Home' : 'Saved', latitude: preferred.latitude, longitude: preferred.longitude })
         } else if (latestOrder) {
           setName(currentUser.name || latestOrder.customerName)
           setPhone(currentUser.phone || latestOrder.phone || '')
           setAddress(latestOrder.address || '')
           setCity(latestOrder.city || '')
           setPincode(latestOrder.pincode || userPincode)
+          setDeliveryLatitude(latestOrder.deliveryLatitude)
+          setDeliveryLongitude(latestOrder.deliveryLongitude)
         }
       })
     } else {
@@ -2515,7 +2407,9 @@ function CheckoutPage({
   }, 0)
 
   const deliveryFee = subtotal >= 499 ? 0 : 49
-  const grandTotal = subtotal + deliveryFee
+  const maxRedeemableCoins = Math.min(Math.floor(coinBalance / 500) * 500, Math.floor(subtotal / 20) * 500)
+  const coinDiscount = Math.floor(coinsToRedeem / 500) * 20
+  const grandTotal = subtotal - coinDiscount + deliveryFee
 
   const handleAuthSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -2570,10 +2464,12 @@ function CheckoutPage({
       customerType,
       gstin,
       paymentMethod: paymentMode,
+      coinsToRedeem,
+      ...(deliveryLatitude !== undefined && deliveryLongitude !== undefined ? { deliveryLatitude, deliveryLongitude } : {}),
     }
     const matchingAddress = savedAddresses.find(item => item.address === address && item.city === city && item.pincode === pincode)
     const nextAddresses: SavedAddress[] = [
-      { id: matchingAddress?.id || `address-${Date.now()}`, name, phone, address, city, pincode, isDefault: true },
+      { id: matchingAddress?.id || `address-${Date.now()}`, name, phone, address, city, pincode, latitude: deliveryLatitude, longitude: deliveryLongitude, isDefault: true },
       ...savedAddresses.filter(item => item.id !== matchingAddress?.id && !(item.address === address && item.city === city && item.pincode === pincode)).map(item => ({ ...item, isDefault: false })),
     ].slice(0, 20)
     setSavedAddresses(nextAddresses)
@@ -2581,6 +2477,7 @@ function CheckoutPage({
     try {
       await saveUserAddressesRemote(nextAddresses).catch(() => {})
       const res = await createOrder({ ...orderData, userId: currentUser?.id })
+      setCoinBalance(Math.max(0, coinBalance - coinsToRedeem))
       const existing = readStorage<ApiOrder[]>('abm_orders', []).filter(order => order.id !== res.order.id)
       localStorage.setItem('abm_orders', JSON.stringify([res.order, ...existing]))
       notifyCoinBalanceChanged()
@@ -2758,7 +2655,7 @@ function CheckoutPage({
                 </div>
               </div>
               {addressPickerOpen && <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
-                {savedAddresses.map(item => <button key={item.id} type="button" className="btn btn-secondary" style={{ justifyContent: 'space-between', textAlign: 'left' }} onClick={() => { setName(item.name); setPhone(item.phone); setAddress(item.address); setCity(item.city); setPincode(item.pincode); setAddressPickerOpen(false) }}>
+                {savedAddresses.map(item => <button key={item.id} type="button" className="btn btn-secondary" style={{ justifyContent: 'space-between', textAlign: 'left' }} onClick={() => { setName(item.name); setPhone(item.phone); setAddress(item.address); setCity(item.city); setPincode(item.pincode); setDeliveryLatitude(item.latitude); setDeliveryLongitude(item.longitude); setAddressPickerOpen(false) }}>
                   <span><b>{item.name}</b> · {item.address}, {item.city} {item.pincode}</span>{item.isDefault && <small>Default</small>}
                 </button>)}
               </div>}
@@ -2777,15 +2674,15 @@ function CheckoutPage({
                 </label>
                 <label style={{ display: 'grid', gap: '4px', fontSize: '12px', fontWeight: 700 }}>
                   PIN Code *
-                  <input required value={pincode} onChange={e => setPincode(e.target.value)} placeholder="600001" className="pdp-pincode-input" />
+                  <input required value={pincode} onChange={e => { setPincode(e.target.value); setDeliveryLatitude(undefined); setDeliveryLongitude(undefined) }} placeholder="600001" className="pdp-pincode-input" />
                 </label>
                 <label style={{ gridColumn: '1 / -1', display: 'grid', gap: '4px', fontSize: '12px', fontWeight: 700 }}>
                   Street Address & Landmark *
-                  <textarea required rows={2} value={address} onChange={e => setAddress(e.target.value)} placeholder="Door no, Street name, Area" className="pdp-pincode-input" />
+                  <textarea required rows={2} value={address} onChange={e => { setAddress(e.target.value); setDeliveryLatitude(undefined); setDeliveryLongitude(undefined) }} placeholder="Door no, Street name, Area" className="pdp-pincode-input" />
                 </label>
                 <label style={{ display: 'grid', gap: '4px', fontSize: '12px', fontWeight: 700 }}>
                   City *
-                  <input required value={city} onChange={e => setCity(e.target.value)} className="pdp-pincode-input" />
+                  <input required value={city} onChange={e => { setCity(e.target.value); setDeliveryLatitude(undefined); setDeliveryLongitude(undefined) }} className="pdp-pincode-input" />
                 </label>
                 <label style={{ display: 'grid', gap: '4px', fontSize: '12px', fontWeight: 700 }}>
                   GSTIN (For School/Tax Invoice)
@@ -2806,6 +2703,14 @@ function CheckoutPage({
         <div className="checkout-card">
           <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '16px' }}>Order Total</h3>
 
+          {currentUser && maxRedeemableCoins >= 500 && <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: 12, marginBottom: 14, borderRadius: 12, background: '#fffbeb', border: '1px solid #fde68a', fontSize: 12 }}>
+            <span><b>Use Agaram Coins</b><small style={{ display: 'block', color: '#64748b', marginTop: 3 }}>{coinBalance.toLocaleString()} available · 500 coins = ₹20 off</small></span>
+            <select value={coinsToRedeem} onChange={event => setCoinsToRedeem(Number(event.target.value))} className="pdp-pincode-input" style={{ width: 120 }} aria-label="Coins to use">
+              <option value={0}>Don't use</option>
+              {Array.from({ length: Math.floor(maxRedeemableCoins / 500) }, (_, index) => (index + 1) * 500).map(coins => <option key={coins} value={coins}>{coins.toLocaleString()} · save ₹{coins / 25}</option>)}
+            </select>
+          </label>}
+
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px' }}>
             <span>Subtotal</span>
             <b>{money(subtotal)}</b>
@@ -2816,6 +2721,8 @@ function CheckoutPage({
               {deliveryFee === 0 ? 'FREE' : money(deliveryFee)}
             </span>
           </div>
+
+          {coinsToRedeem > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '14px', fontSize: '13px', color: '#047857' }}><span>Coin discount ({coinsToRedeem.toLocaleString()} coins)</span><b>−{money(coinDiscount)}</b></div>}
 
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '18px', fontWeight: 900, borderTop: '1px solid var(--line)', paddingTop: '14px', marginBottom: '20px' }}>
             <span>To Pay</span>
@@ -2852,7 +2759,7 @@ function CheckoutPage({
           )}
         </div>
       </div>
-      <MapLocationPickerModal isOpen={mapAddressPickerOpen} onClose={() => setMapAddressPickerOpen(false)} currentPincode={pincode} onSelectAddress={location => { setAddress(location.address); setCity(location.city); setPincode(location.pincode); setMapAddressPickerOpen(false) }} lang={lang} />
+      <MapLocationPickerModal isOpen={mapAddressPickerOpen} onClose={() => setMapAddressPickerOpen(false)} currentPincode={pincode} onSelectAddress={location => { setAddress(location.address); setCity(location.city); setPincode(location.pincode); setDeliveryLatitude(location.latitude); setDeliveryLongitude(location.longitude); setSelectedDeliveryLocation(location); setMapAddressPickerOpen(false) }} lang={lang} />
     </div>
   )
 }
@@ -2860,7 +2767,7 @@ function CheckoutPage({
 /* ==========================================================================
    TAX INVOICE PAGE (Printable & Downloadable GST Invoice)
    ========================================================================== */
-function InvoicePage({ products, currentUser, lang = 'en', onOpenTracking }: { products: Product[]; currentUser: { id?: string; name?: string; email?: string } | null; lang?: Language; onOpenTracking?: (orderId: string, address: string) => void }) {
+function InvoicePage({ products, currentUser, lang = 'en', onOpenTracking }: { products: Product[]; currentUser: { id?: string; name?: string; email?: string } | null; lang?: Language; onOpenTracking?: (orderId: string, address: string, latitude?: number, longitude?: number) => void }) {
   const { orderId } = useParams<{ orderId: string }>()
   const [order, setOrder] = useState<ApiOrder | null>(null)
   const [loading, setLoading] = useState(true)
@@ -2932,9 +2839,9 @@ function InvoicePage({ products, currentUser, lang = 'en', onOpenTracking }: { p
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '20px' }}>
         <Link to="/" className="btn btn-secondary"><ArrowLeft size={16} /> {lang === 'ta' ? 'கடைக்குத் திரும்பு' : 'Back to Store'}</Link>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          {onOpenTracking && (
+          {onOpenTracking && order.status === 'shipped' && (
             <button
-              onClick={() => onOpenTracking(order.id, `${order.address || 'Cuddalore'} - ${order.pincode || '607001'}`)}
+              onClick={() => onOpenTracking(order.id, `${order.address || 'Cuddalore'} - ${order.pincode || '607001'}`, order.deliveryLatitude, order.deliveryLongitude)}
               className="btn btn-secondary"
               style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: 800 }}
             >
@@ -2969,7 +2876,7 @@ function InvoicePage({ products, currentUser, lang = 'en', onOpenTracking }: { p
               {order.id}
             </div>
             <div style={{ fontSize: '11px', color: '#64748b' }}>Date: {order.date}</div>
-            <div style={{ fontSize: '11px', color: '#64748b' }}>Status: Demo order</div>
+            <div style={{ fontSize: '11px', color: '#64748b' }}>Status: {(order.status || 'received').replace(/_/g, ' ')}</div>
           </div>
         </div>
 
@@ -2986,7 +2893,6 @@ function InvoicePage({ products, currentUser, lang = 'en', onOpenTracking }: { p
             <div style={{ fontSize: '11.5px', color: '#475569', marginTop: '2px' }}>{order.email || 'riyashkhan484@gmail.com'}</div>
             <div style={{ fontSize: '11.5px', color: '#475569' }}>{order.address || 'Cuddalore'} - {order.pincode || '607001'}</div>
             <div style={{ fontSize: '11.5px', color: '#475569' }}>Phone: {order.phone || '9876543210'}</div>
-            <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>demo@abm.in</div>
           </div>
 
           <div>
@@ -3000,6 +2906,13 @@ function InvoicePage({ products, currentUser, lang = 'en', onOpenTracking }: { p
             {order.trackingUrl && <a href={order.trackingUrl} target="_blank" rel="noreferrer" style={{ fontSize: '11.5px' }}>Track shipment</a>}
             <div style={{ fontSize: '11.5px', color: '#475569' }}>Place of supply: Cuddalore, Tamil Nadu</div>
           </div>
+        </div>
+
+        <div style={{ margin: '18px 0', border: '1px solid #dbeafe', borderRadius: 12, padding: 14, background: '#f8fbff' }}>
+          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 4 }}>Delivery location</div>
+          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10 }}>{[order.address, order.city, order.pincode].filter(Boolean).join(', ')}</div>
+          {order.deliveryLatitude != null && order.deliveryLongitude != null ? <iframe title="Delivery location in Google Maps" src={`https://maps.google.com/maps?q=${order.deliveryLatitude},${order.deliveryLongitude}&z=16&output=embed`} width="100%" height="240" loading="lazy" style={{ border: 0, borderRadius: 10 }} /> : <div style={{ fontSize: 12, color: '#64748b' }}>No exact map pin was saved for this order.</div>}
+          <a className="btn btn-secondary" style={{ marginTop: 10, display: 'inline-flex', gap: 6 }} href={order.deliveryLatitude != null && order.deliveryLongitude != null ? `https://www.google.com/maps/search/?api=1&query=${order.deliveryLatitude},${order.deliveryLongitude}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${order.address || ''} ${order.city || ''} ${order.pincode || ''}`)}`} target="_blank" rel="noreferrer"><MapPin size={15} /> Open delivery pin in Google Maps</a>
         </div>
 
         {/* Pink-Headed Items Table */}
@@ -3069,7 +2982,7 @@ function InvoicePage({ products, currentUser, lang = 'en', onOpenTracking }: { p
               <span>Estimated GST</span>
               <b>₹{totalGst.toFixed(2)}</b>
             </div>
-            {order.discount > 0 && <div style={{ color: '#15803d', fontSize: '11px' }}>Previous order discount · saved {money(order.discount)} (reflected in item totals)</div>}
+            {order.discount > 0 && <div style={{ color: '#15803d', fontSize: '11px' }}>{order.coinsRedeemed ? `Coin discount · ${order.coinsRedeemed.toLocaleString()} coins saved ${money(order.discount)}` : `Discount · saved ${money(order.discount)}`} (reflected in item totals)</div>}
             {order.deliveryFee ? <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}><span>Delivery fee</span><b>{money(order.deliveryFee)}</b></div> : null}
             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b', fontSize: '11.5px', paddingLeft: '10px' }}>
               <span>CGST (illustrative)</span>
@@ -3157,7 +3070,7 @@ function AccountPage({
   currentUser: { id?: string; name?: string; email?: string } | null
   setCurrentUser: (u: { id?: string; name?: string; email?: string } | null) => void
   lang?: Language
-  onOpenTracking?: (orderId: string, address: string) => void
+  onOpenTracking?: (orderId: string, address: string, latitude?: number, longitude?: number) => void
 }) {
   const [isSignUp, setIsSignUp] = useState(false)
   const [name, setName] = useState('')
@@ -3320,9 +3233,9 @@ function AccountPage({
                     {order.customerName && <div style={{ fontSize: '11px', color: 'var(--text-soft)' }}>Deliver to: {order.customerName}, {order.city}</div>}
                   </div>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    {onOpenTracking && (
+          {onOpenTracking && order.status === 'shipped' && (
                       <button
-                        onClick={() => onOpenTracking(order.id, `${order.address || 'Cuddalore'} - ${order.pincode || '607001'}`)}
+                        onClick={() => onOpenTracking(order.id, `${order.address || 'Cuddalore'} - ${order.pincode || '607001'}`, order.deliveryLatitude, order.deliveryLongitude)}
                         className="btn btn-secondary"
                         style={{ fontSize: '11px', padding: '5px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: 800 }}
                       >

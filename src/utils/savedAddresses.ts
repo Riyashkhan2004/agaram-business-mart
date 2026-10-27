@@ -6,6 +6,8 @@ export type SavedAddress = {
   city: string
   pincode: string
   isDefault: boolean
+  latitude?: number
+  longitude?: number
 }
 
 type SavedAddressRecord = { expiresAt?: number | null; addresses: SavedAddress[] }

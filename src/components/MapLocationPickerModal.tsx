@@ -16,7 +16,7 @@ interface MapLocationPickerModalProps {
   isOpen: boolean
   onClose: () => void
   currentPincode: string
-  onSelectAddress: (addressData: { address: string; city: string; pincode: string; label: string }) => void
+  onSelectAddress: (addressData: { address: string; city: string; pincode: string; label: string; latitude: number; longitude: number }) => void
   lang?: 'en' | 'ta'
 }
 
@@ -217,6 +217,8 @@ export function MapLocationPickerModal({
       city,
       pincode,
       label: addressType.toUpperCase(),
+      latitude: coords[0],
+      longitude: coords[1],
     })
     onClose()
   }

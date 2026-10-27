@@ -81,6 +81,8 @@ CREATE INDEX IF NOT EXISTS user_addresses_owner_expiry_idx ON user_addresses(use
 ALTER TABLE user_addresses ALTER COLUMN expires_at DROP NOT NULL;
 ALTER TABLE user_addresses ALTER COLUMN expires_at SET DEFAULT NULL;
 UPDATE user_addresses SET expires_at = NULL WHERE expires_at IS NOT NULL;
+ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
+ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
 
 CREATE TABLE IF NOT EXISTS products (
   id INTEGER PRIMARY KEY,
@@ -165,6 +167,13 @@ CREATE TABLE IF NOT EXISTS orders (
   payment_method VARCHAR(16) NOT NULL DEFAULT 'cod' CHECK (payment_method IN ('upi', 'card', 'cod')),
   payment_status VARCHAR(24) NOT NULL DEFAULT 'due_on_delivery' CHECK (payment_status IN ('pending', 'paid', 'failed', 'due_on_delivery', 'refunded')),
   coins_earned INTEGER NOT NULL DEFAULT 0 CHECK (coins_earned >= 0),
+  coins_redeemed INTEGER NOT NULL DEFAULT 0 CHECK (coins_redeemed >= 0),
+  coins_refunded INTEGER NOT NULL DEFAULT 0 CHECK (coins_refunded >= 0),
+  delivery_latitude DOUBLE PRECISION,
+  delivery_longitude DOUBLE PRECISION,
+  driver_latitude DOUBLE PRECISION,
+  driver_longitude DOUBLE PRECISION,
+  driver_location_updated_at TIMESTAMPTZ,
   shipping_provider VARCHAR(120),
   tracking_number VARCHAR(160),
   tracking_url TEXT,
@@ -186,6 +195,13 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_fee NUMERIC(12,2) NOT NULL 
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method VARCHAR(16) NOT NULL DEFAULT 'cod' CHECK (payment_method IN ('upi', 'card', 'cod'));
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_status VARCHAR(24) NOT NULL DEFAULT 'due_on_delivery' CHECK (payment_status IN ('pending', 'paid', 'failed', 'due_on_delivery', 'refunded'));
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS coins_earned INTEGER NOT NULL DEFAULT 0 CHECK (coins_earned >= 0);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS coins_redeemed INTEGER NOT NULL DEFAULT 0 CHECK (coins_redeemed >= 0);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS coins_refunded INTEGER NOT NULL DEFAULT 0 CHECK (coins_refunded >= 0);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_latitude DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_longitude DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_latitude DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_longitude DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_location_updated_at TIMESTAMPTZ;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_provider VARCHAR(120);
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_number VARCHAR(160);
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_url TEXT;

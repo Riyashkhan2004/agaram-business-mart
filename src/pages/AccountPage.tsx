@@ -34,7 +34,7 @@ interface AccountPageProps {
   setCurrentUser: (u: { id?: string; name?: string; email?: string; phone?: string } | null) => void
   coinBalance?: number
   lang?: Language
-  onOpenTracking?: (orderId: string, address: string) => void
+  onOpenTracking?: (orderId: string, address: string, latitude?: number, longitude?: number) => void
   products: Product[]
   cart: { productId: number; quantity: number }[]
   onAddToCart: (productId: number, qty?: number) => void
@@ -1036,9 +1036,9 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                               <X size={14} /> {cancellingOrderId === order.id ? 'Cancelling…' : 'Cancel order'}
                             </button>
                           )}
-                          {onOpenTracking && (
+                          {onOpenTracking && order.status === 'shipped' && (
                             <button
-                              onClick={() => onOpenTracking(order.id, `${order.address || 'Cuddalore'} - ${order.pincode || '607001'}`)}
+                              onClick={() => onOpenTracking(order.id, `${order.address || 'Cuddalore'} - ${order.pincode || '607001'}`, order.deliveryLatitude, order.deliveryLongitude)}
                               className="btn btn-secondary"
                               style={{
                                 fontSize: '11.5px',
@@ -1196,6 +1196,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
               </h3>
               <ul style={{ fontSize: '13px', color: '#475569', lineHeight: 1.8, paddingLeft: '20px', margin: 0 }}>
                 <li>Earn 1 coin for each complete ₹100 of an order total (after discounts and delivery fees).</li>
+                <li>At checkout, redeem coins in 500-coin steps; each 500 coins reduces a product subtotal by ₹20.</li>
                 <li>Coins from checkout orders appear in your balance and order history.</li>
                 <li>Coins are credited once, only after an administrator marks an order delivered. Pending or cancelled orders earn none; an administrator may also adjust your balance.</li>
               </ul>

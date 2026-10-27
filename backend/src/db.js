@@ -91,9 +91,10 @@ export function camelOrder(row, items = []) {
       return { productId: Number(item.product_id), quantity: Number(item.quantity), name: item.product_name, image: item.product_image || '', sku: item.sku, price: Number(item.unit_price), gst: Number(item.gst_rate), discount, lineTotal: inclusiveTax ? gross : base + tax, tax }
     }),
     total: Number(row.total), subtotal: Number(row.subtotal), tax: Number(row.tax), discount: inclusiveTax ? Number(row.discount || 0) : 0, couponCode: row.coupon_code || '', deliveryFee: Number(row.delivery_fee || 0), pricingVersion: Number(row.pricing_version || 1),
-    customerType: row.customer_type || 'retail', coinsEarned: Number(row.coins_earned || 0),
+    customerType: row.customer_type || 'retail', coinsEarned: Number(row.coins_earned || 0), coinsRedeemed: Number(row.coins_redeemed || 0), coinsRefunded: Number(row.coins_refunded || 0),
     customerName: row.customer_name, email: row.email || '', phone: row.phone,
     address: row.address, city: row.city, pincode: row.pincode, gstin: row.gstin || '',
+    deliveryLatitude: row.delivery_latitude == null ? undefined : Number(row.delivery_latitude), deliveryLongitude: row.delivery_longitude == null ? undefined : Number(row.delivery_longitude),
     status: row.status,
     paymentMethod: row.payment_method || 'cod', paymentStatus: row.payment_status || 'due_on_delivery',
     shippingProvider: row.shipping_provider || '', trackingNumber: row.tracking_number || '', trackingUrl: row.tracking_url || '',
