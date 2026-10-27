@@ -267,7 +267,7 @@ export function Header({
             )}
           </div>
 
-          {/* Right Action Icons (Flipkart-Style Profile Dropdown, Wishlist, Cart) */}
+          {/* Right Action Icons (Profile Dropdown, Wishlist, Cart) */}
           <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
             {/* Wishlist Link */}
             <Link
@@ -344,7 +344,7 @@ export function Header({
               )}
             </button>
 
-            {/* USER PROFILE BUTTON (Flipkart-Style Dropdown Trigger - Image 4) */}
+            {/* USER PROFILE BUTTON (Profile Dropdown Trigger - Image 4) */}
             <div style={{ position: 'relative' }}>
               <button
                 type="button"

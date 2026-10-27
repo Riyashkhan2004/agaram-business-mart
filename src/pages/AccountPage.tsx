@@ -5,7 +5,6 @@ import {
   User,
   MapPin,
   Heart,
-  Tag,
   Coins,
   ShieldCheck,
   CreditCard,
@@ -14,21 +13,18 @@ import {
   LogOut,
   Printer,
   ChevronRight,
-  Eye,
-  EyeOff,
   ShoppingBag,
   Clock,
   CheckCircle2,
   AlertCircle,
-  Copy,
-  Check,
   X,
   ArrowLeft,
   Headphones,
   Sparkles,
   WalletCards
+  ,Phone, KeyRound
 } from 'lucide-react'
-import { fetchUserOrders, fetchUserAddresses, saveUserAddressesRemote, customerLogin, signUp, logout, cancelCustomerOrder, ApiOrder } from '../api'
+import { fetchUserOrders, fetchUserAddresses, saveUserAddressesRemote, customerLogin, customerNameLogin, requestPhoneCode, verifyPhoneCode, logout, cancelCustomerOrder, ApiOrder } from '../api'
 import { Product, Language, t, money, unitPrice, CustomerType } from '../data/products'
 import { loadSavedAddresses, saveUserAddresses, type SavedAddress } from '../utils/savedAddresses'
 import { MapLocationPickerModal } from '../components/MapLocationPickerModal'
@@ -51,7 +47,6 @@ type TabKey =
   | 'overview'
   | 'profile'
   | 'orders'
-  | 'coupons'
   | 'supercoin'
   | 'plus'
   | 'wallet'
@@ -91,12 +86,12 @@ function LiveOrderProgress({ order }: { order: ApiOrder }) {
         <span aria-hidden="true">·</span>
         <b style={{ color: '#0f172a' }}>{order.paymentStatus === 'paid' ? 'Cash collected' : `Pay ${money(order.total)} to your driver`}</b>
       </div>}
-      {order.deliveryDriverName && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', marginTop: '11px', paddingTop: '10px', borderTop: '1px solid #dbeafe' }}>
+      {order.status !== 'delivered' && order.deliveryDriverName && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', marginTop: '11px', paddingTop: '10px', borderTop: '1px solid #dbeafe' }}>
         <div style={{ fontSize: '11px', color: '#475569' }}><b style={{ color: '#0f172a' }}>{order.deliveryDriverName}</b> · Agaram delivery driver{order.estimatedDeliveryAt && <div style={{ marginTop: '3px' }}>ETA {new Date(order.estimatedDeliveryAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</div>}</div>
         {order.deliveryDriverPhone && <a href={`tel:${order.deliveryDriverPhone}`} aria-label={`Call delivery driver ${order.deliveryDriverName}`} style={{ minHeight: '40px', padding: '0 12px', display: 'inline-flex', alignItems: 'center', borderRadius: '9px', color: '#fff', background: '#15803d', textDecoration: 'none', fontWeight: 800, fontSize: '11px' }}>Call driver</a>}
       </div>}
-      {order.status === 'shipped' && order.trackingUrl && <a href={order.trackingUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', marginTop: '10px', fontSize: '11px', fontWeight: 800 }}>Open driver live location →</a>}
-      {order.updatedAt && <div style={{ color: '#64748b', fontSize: '9px', marginTop: '8px' }}>Last updated {new Date(order.updatedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</div>}
+      {order.status !== 'delivered' && order.status === 'shipped' && order.trackingUrl && <a href={order.trackingUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', marginTop: '10px', fontSize: '11px', fontWeight: 800 }}>Open driver live location →</a>}
+      {order.status !== 'delivered' && order.updatedAt && <div style={{ color: '#64748b', fontSize: '9px', marginTop: '8px' }}>Last updated {new Date(order.updatedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</div>}
     </section>
   )
 }
@@ -104,7 +99,7 @@ function LiveOrderProgress({ order }: { order: ApiOrder }) {
 export const AccountPage: React.FC<AccountPageProps> = ({
   currentUser,
   setCurrentUser,
-  coinBalance = 50,
+  coinBalance = 0,
   lang = 'en',
   onOpenTracking,
   products,
@@ -117,7 +112,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab') as TabKey | null
-  const currentTab = requestedTab && requestedTab !== 'overview' ? requestedTab : 'orders'
+  const currentTab: TabKey = requestedTab && ['profile', 'orders', 'supercoin', 'plus', 'wallet', 'addresses', 'wishlist', 'giftcards', 'notifications'].includes(requestedTab) ? requestedTab : 'orders'
   const [isPhoneViewport, setIsPhoneViewport] = useState(() => window.matchMedia('(max-width: 767px)').matches)
   const showingMobileOverview = (!requestedTab || requestedTab === 'overview') && isPhoneViewport
 
@@ -132,8 +127,11 @@ export const AccountPage: React.FC<AccountPageProps> = ({
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [phone, setPhone] = useState('')
+  const [verificationCode, setVerificationCode] = useState('')
+  const [codeSent, setCodeSent] = useState(false)
+  const [authMethod, setAuthMethod] = useState<'name' | 'email'>('name')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -159,8 +157,6 @@ export const AccountPage: React.FC<AccountPageProps> = ({
   const [newAddrPincode, setNewAddrPincode] = useState('607001')
   const [addressMapOpen, setAddressMapOpen] = useState(false)
 
-  // Copied coupon toast
-  const [copiedCode, setCopiedCode] = useState<string | null>(null)
 
   // Load strictly user-isolated orders
   useEffect(() => {
@@ -274,14 +270,23 @@ export const AccountPage: React.FC<AccountPageProps> = ({
     e.preventDefault()
     setError('')
     setMessage('')
+    if (isSignUp && codeSent && password !== confirmPassword) {
+      setError('Your passwords do not match. Check both password fields and try again.')
+      return
+    }
     setIsSubmitting(true)
     try {
-      if (isSignUp) {
-        const res = await signUp(name, email, password)
-        setMessage(res.message || 'Account created successfully! Check your email if verification is enabled.')
-        if (res.user) {
-          setCurrentUser({ ...res.user, phone })
-        }
+      if (isSignUp && !codeSent) {
+        const res = await requestPhoneCode(phone, name)
+        setCodeSent(true)
+        setMessage(res.message)
+      } else if (isSignUp) {
+        const res = await verifyPhoneCode(phone, verificationCode, name, password, confirmPassword)
+        setCurrentUser(res.user)
+        setMessage('Your phone is verified and your account is ready.')
+      } else if (authMethod === 'name') {
+        const res = await customerNameLogin(name, password)
+        setCurrentUser(res.user)
       } else {
         const res = await customerLogin(email, password)
         setCurrentUser(res.user)
@@ -299,12 +304,6 @@ export const AccountPage: React.FC<AccountPageProps> = ({
     } catch {}
     setCurrentUser(null)
     setOrders([])
-  }
-
-  const copyCoupon = (code: string) => {
-    navigator.clipboard.writeText(code)
-    setCopiedCode(code)
-    setTimeout(() => setCopiedCode(null), 2000)
   }
 
   const handleAddAddress = async (e: FormEvent) => {
@@ -386,8 +385,8 @@ export const AccountPage: React.FC<AccountPageProps> = ({
           </h1>
           <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '24px', lineHeight: 1.5 }}>
             {isSignUp
-              ? 'Register to unlock verified wholesale discounts, track orders live on map, and save multiple delivery addresses.'
-              : 'Sign in to access your isolated order history, GST tax invoices, and SuperCoin rewards.'}
+              ? 'Create your account with a phone number. We’ll verify it with a one-time code before activating your account.'
+              : 'Sign in with your account name and password to see orders, invoices, and Agaram coins.'}
           </p>
 
           {/* Toggle buttons between Sign In and Sign Up */}
@@ -404,6 +403,9 @@ export const AccountPage: React.FC<AccountPageProps> = ({
               type="button"
               onClick={() => {
                 setIsSignUp(false)
+                setAuthMethod('name')
+                setCodeSent(false)
+                setVerificationCode('')
                 setError('')
                 setMessage('')
               }}
@@ -427,6 +429,9 @@ export const AccountPage: React.FC<AccountPageProps> = ({
               type="button"
               onClick={() => {
                 setIsSignUp(true)
+                setAuthMethod('name')
+                setCodeSent(false)
+                setVerificationCode('')
                 setError('')
                 setMessage('')
               }}
@@ -447,6 +452,11 @@ export const AccountPage: React.FC<AccountPageProps> = ({
               New Account
             </button>
           </div>
+
+          {!isSignUp ? <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', margin: '-8px 0 18px' }}>
+            <button type="button" onClick={() => { setAuthMethod('name'); setError(''); setMessage('') }} style={{ border: `1px solid ${authMethod === 'name' ? '#2563eb' : '#e2e8f0'}`, background: authMethod === 'name' ? '#eff6ff' : '#fff', color: authMethod === 'name' ? '#1d4ed8' : '#64748b', borderRadius: '999px', padding: '7px 12px', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>Name & password</button>
+            <button type="button" onClick={() => { setAuthMethod('email'); setError(''); setMessage('') }} style={{ border: `1px solid ${authMethod === 'email' ? '#2563eb' : '#e2e8f0'}`, background: authMethod === 'email' ? '#eff6ff' : '#fff', color: authMethod === 'email' ? '#1d4ed8' : '#64748b', borderRadius: '999px', padding: '7px 12px', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>Email & password</button>
+          </div> : <div style={{ margin: '-8px 0 18px', padding: '9px 12px', borderRadius: '10px', background: '#eff6ff', color: '#1d4ed8', fontSize: 11, fontWeight: 800 }}><Phone size={13} style={{ verticalAlign: 'middle', marginRight: 5 }} />Phone verification is required to create an account</div>}
 
           {error && (
             <div
@@ -489,97 +499,55 @@ export const AccountPage: React.FC<AccountPageProps> = ({
           )}
 
           <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '14px', textAlign: 'left' }}>
-            {isSignUp && (
+            {isSignUp ? <>
+              {!codeSent && <>
+                <label style={{ display: 'grid', gap: '5px', fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                  Full name *
+                  <input type="text" required minLength={2} maxLength={120} autoComplete="name" placeholder="Your name or business name" value={name} onChange={e => setName(e.target.value)} className="pdp-pincode-input" style={{ width: '100%', height: '44px', borderRadius: '10px', fontSize: '14px' }} />
+                </label>
+                <label style={{ display: 'grid', gap: '5px', fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                  Phone number *
+                  <input type="tel" required inputMode="tel" autoComplete="tel" placeholder="10-digit Indian mobile number" value={phone} onChange={e => setPhone(e.target.value)} className="pdp-pincode-input" style={{ width: '100%', height: '44px', borderRadius: '10px', fontSize: '14px' }} />
+                </label>
+              </>}
+              {codeSent && <>
+                <div style={{ padding: '12px 14px', borderRadius: '12px', background: '#eff6ff', color: '#1e3a8a', fontSize: '13px', lineHeight: 1.5 }}>We sent a verification code for <b>{phone}</b>. Enter it below to finish creating your account.</div>
+                <label style={{ display: 'grid', gap: '5px', fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><KeyRound size={14} /> Verification code *</span>
+                  <input type="text" required inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="[0-9]{6}" placeholder="6-digit code" value={verificationCode} onChange={e => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))} className="pdp-pincode-input" style={{ width: '100%', height: '48px', borderRadius: '10px', fontSize: '20px', letterSpacing: '.3em', textAlign: 'center' }} />
+                </label>
+                <label style={{ display: 'grid', gap: '5px', fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                  Password *
+                  <input type="password" required minLength={10} maxLength={72} autoComplete="new-password" placeholder="Create a password (10+ characters)" value={password} onChange={e => setPassword(e.target.value)} className="pdp-pincode-input" style={{ width: '100%', height: '44px', borderRadius: '10px', fontSize: '14px' }} />
+                </label>
+                <label style={{ display: 'grid', gap: '5px', fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                  Retype password *
+                  <input type="password" required minLength={10} maxLength={72} autoComplete="new-password" placeholder="Type the same password again" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="pdp-pincode-input" style={{ width: '100%', height: '44px', borderRadius: '10px', fontSize: '14px' }} />
+                </label>
+                <button type="button" onClick={() => { setCodeSent(false); setVerificationCode(''); setMessage('') }} style={{ alignSelf: 'start', border: 0, background: 'none', color: '#2563eb', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}>Edit details / request another code</button>
+              </>}
+            </> : authMethod === 'name' ? <>
               <label style={{ display: 'grid', gap: '5px', fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                Full Name / Business Name *
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Praveen Kumar / Agaram Books"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  className="pdp-pincode-input"
-                  style={{ width: '100%', height: '42px', borderRadius: '10px', fontSize: '13px' }}
-                />
+                Name *
+                <input type="text" required autoComplete="username" placeholder="Enter the name on your account" value={name} onChange={e => setName(e.target.value)} className="pdp-pincode-input" style={{ width: '100%', height: '44px', borderRadius: '10px', fontSize: '14px' }} />
               </label>
-            )}
-
-            <label style={{ display: 'grid', gap: '5px', fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-              Email Address *
-              <input
-                type="email"
-                required
-                placeholder="e.g. praveen@example.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="pdp-pincode-input"
-                style={{ width: '100%', height: '42px', borderRadius: '10px', fontSize: '13px' }}
-              />
-            </label>
-
-            {isSignUp && (
               <label style={{ display: 'grid', gap: '5px', fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                Mobile Number (for delivery SMS)
-                <input
-                  type="tel"
-                  placeholder="10-digit mobile number"
-                  value={phone}
-                  onChange={e => setPhone(e.target.value)}
-                  className="pdp-pincode-input"
-                  style={{ width: '100%', height: '42px', borderRadius: '10px', fontSize: '13px' }}
-                />
+                Password *
+                <input type="password" required autoComplete="current-password" placeholder="Enter your password" value={password} onChange={e => setPassword(e.target.value)} className="pdp-pincode-input" style={{ width: '100%', height: '44px', borderRadius: '10px', fontSize: '14px' }} />
               </label>
-            )}
+            </> : <>
+              <label style={{ display: 'grid', gap: '5px', fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                Email address *
+                <input type="email" required autoComplete="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} className="pdp-pincode-input" style={{ width: '100%', height: '44px', borderRadius: '10px', fontSize: '14px' }} />
+              </label>
+              <label style={{ display: 'grid', gap: '5px', fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                Password *
+                <input type="password" required autoComplete="current-password" placeholder="Enter your password" value={password} onChange={e => setPassword(e.target.value)} className="pdp-pincode-input" style={{ width: '100%', height: '44px', borderRadius: '10px', fontSize: '14px' }} />
+              </label>
+            </>}
 
-            <label style={{ display: 'grid', gap: '5px', fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-              Password *
-              <div style={{ position: 'relative' }}>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  className="pdp-pincode-input"
-                  style={{ width: '100%', height: '42px', borderRadius: '10px', fontSize: '13px', paddingRight: '42px' }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  style={{
-                    position: 'absolute',
-                    right: '12px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    background: 'none',
-                    border: 'none',
-                    color: '#94a3b8',
-                    cursor: 'pointer',
-                    display: 'grid',
-                    placeItems: 'center'
-                  }}
-                  tabIndex={-1}
-                >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-            </label>
-
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="btn btn-primary"
-              style={{
-                width: '100%',
-                height: '46px',
-                fontSize: '14px',
-                fontWeight: 800,
-                borderRadius: '12px',
-                marginTop: '10px',
-                boxShadow: '0 4px 14px rgba(225, 29, 72, 0.3)'
-              }}
-            >
-              {isSubmitting ? 'Please wait...' : isSignUp ? 'Create My Account' : 'Sign In to My Account'}
+            <button type="submit" disabled={isSubmitting} className="btn btn-primary" style={{ width: '100%', height: '48px', fontSize: '14px', fontWeight: 800, borderRadius: '12px', marginTop: '8px', boxShadow: '0 4px 14px rgba(225, 29, 72, 0.3)' }}>
+              {isSubmitting ? 'Please wait...' : isSignUp ? codeSent ? 'Verify & create account' : 'Send verification code' : 'Sign in'}
             </button>
           </form>
 
@@ -594,11 +562,10 @@ export const AccountPage: React.FC<AccountPageProps> = ({
     )
   }
 
-  // Navigation Items matching Flipkart Profile Dropdown
+  // Account navigation items
   const navItems: Array<{ key: TabKey; label: string; icon: React.ReactNode; badge?: string }> = [
     { key: 'orders', label: 'Orders', icon: <Package size={17} />, badge: orders.length > 0 ? `${orders.length}` : undefined },
     { key: 'profile', label: 'My Profile', icon: <User size={17} /> },
-    { key: 'coupons', label: 'Coupons', icon: <Tag size={17} />, badge: '4 New' },
     { key: 'supercoin', label: 'SuperCoin Zone', icon: <Coins size={17} />, badge: `${coinBalance}` },
     { key: 'plus', label: 'Agaram Plus Zone', icon: <ShieldCheck size={17} />, badge: 'VIP' },
     { key: 'wallet', label: 'Saved Cards & Wallet', icon: <CreditCard size={17} /> },
@@ -787,7 +754,6 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                 {[
                   { key: 'orders' as TabKey, label: 'My orders', detail: `${orders.length} ${orders.length === 1 ? 'order' : 'orders'}`, icon: <Package size={20} />, tone: 'coral' },
                   { key: 'wishlist' as TabKey, label: 'Wishlist', detail: `${wishlist.length} saved`, icon: <Heart size={20} />, tone: 'rose' },
-                  { key: 'coupons' as TabKey, label: 'Coupons', detail: 'Deals for you', icon: <Tag size={20} />, tone: 'amber' },
                   { key: 'help' as const, label: 'Help center', detail: 'We’re ready to help', icon: <Headphones size={20} />, tone: 'green' },
                 ].map(action => (
                   action.key === 'help' ? (
@@ -1185,98 +1151,6 @@ export const AccountPage: React.FC<AccountPageProps> = ({
             </div>
           )}
 
-          {/* TAB: COUPONS */}
-          {currentTab === 'coupons' && (
-            <div>
-              <div style={{ marginBottom: '18px' }}>
-                <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: 0 }}>
-                  Available Coupons & Promo Codes
-                </h2>
-                <p style={{ fontSize: '12.5px', color: '#64748b', margin: '2px 0 0' }}>
-                  Click to copy promo code and apply directly at checkout
-                </p>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
-                {[
-                  {
-                    code: 'WHOLESALE10',
-                    title: 'Flat 10% Off on Bulk Stationery',
-                    desc: 'Applicable on orders above ₹1,000 across all cartons and pens.',
-                    expiry: 'Expires in 6 days'
-                  },
-                  {
-                    code: 'BULK500',
-                    title: '₹500 Instant Cashback',
-                    desc: 'Valid on school & office combo kits above ₹3,000.',
-                    expiry: 'Valid this month'
-                  },
-                  {
-                    code: 'AGARAMPLUS',
-                    title: 'Free Express Delivery',
-                    desc: 'Get zero shipping fee on all orders above ₹499.',
-                    expiry: 'Exclusive for Members'
-                  },
-                  {
-                    code: 'SUPERCOIN50',
-                    title: 'Redeem 50 SuperCoins',
-                    desc: 'Get flat ₹50 off using your available SuperCoin balance.',
-                    expiry: 'Available now'
-                  }
-                ].map((c, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      background: '#fff',
-                      border: '1px dashed #f43f5e',
-                      borderRadius: '14px',
-                      padding: '16px 18px',
-                      position: 'relative'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <span
-                        style={{
-                          background: '#fff1f2',
-                          color: '#e11d48',
-                          fontWeight: 800,
-                          fontSize: '13px',
-                          padding: '3px 10px',
-                          borderRadius: '6px',
-                          letterSpacing: '0.04em'
-                        }}
-                      >
-                        {c.code}
-                      </span>
-                      <button
-                        onClick={() => copyCoupon(c.code)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: '#e11d48',
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          fontSize: '12px',
-                          fontWeight: 700
-                        }}
-                      >
-                        {copiedCode === c.code ? <Check size={14} /> : <Copy size={14} />}
-                        {copiedCode === c.code ? 'Copied!' : 'Copy Code'}
-                      </button>
-                    </div>
-                    <div style={{ fontSize: '13.5px', fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>{c.title}</div>
-                    <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 10px', lineHeight: 1.4 }}>{c.desc}</p>
-                    <div style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Clock size={12} /> {c.expiry}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* TAB: SUPERCOIN */}
           {currentTab === 'supercoin' && (
             <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '24px' }}>
@@ -1297,7 +1171,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                 <div>
                   <div style={{ fontSize: '12px', fontWeight: 700, opacity: 0.9 }}>Available SuperCoin Balance</div>
                   <div style={{ fontSize: '36px', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    🪙 {coinBalance} <span style={{ fontSize: '16px', fontWeight: 600 }}>(Worth ₹{coinBalance})</span>
+                    🪙 {coinBalance} <span style={{ fontSize: '16px', fontWeight: 600 }}>(Agaram coins)</span>
                   </div>
                 </div>
                 <button
@@ -1321,13 +1195,13 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                 How SuperCoins Work
               </h3>
               <ul style={{ fontSize: '13px', color: '#475569', lineHeight: 1.8, paddingLeft: '20px', margin: 0 }}>
-                <li>Earn 1 SuperCoin for every ₹100 spent on an order.</li>
+                <li>Earn 1 coin for each complete ₹100 of an order total (after discounts and delivery fees).</li>
                 <li>Coins from checkout orders appear in your balance and order history.</li>
-                <li>Your current balance is {coinBalance} coins. Checkout redemption is not enabled yet.</li>
+                <li>Coins are credited once, only after an administrator marks an order delivered. Pending or cancelled orders earn none; an administrator may also adjust your balance.</li>
               </ul>
               <div style={{ marginTop: 20, borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
                 <h3 style={{ fontSize: 14, margin: '0 0 10px' }}>Recent coin activity</h3>
-                {orders.length ? orders.slice(0, 5).map(order => <div key={order.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #f1f5f9', fontSize: 12 }}><span>Order #{order.id}</span><b style={{ color: '#b45309' }}>+{order.coinsEarned || Math.floor(order.total / 100)} coins</b></div>) : <p style={{ color: '#64748b', fontSize: 12 }}>Place an order to start earning coins.</p>}
+                {orders.length ? orders.slice(0, 5).map(order => <div key={order.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #f1f5f9', fontSize: 12 }}><span>Order #{order.id} · {order.status === 'delivered' ? 'Delivered' : 'Pending delivery'}</span><b style={{ color: '#b45309' }}>{order.coinsEarned ? `+${order.coinsEarned} coins` : '—'}</b></div>) : <p style={{ color: '#64748b', fontSize: 12 }}>Coins are added when your order is delivered.</p>}
               </div>
             </div>
           )}

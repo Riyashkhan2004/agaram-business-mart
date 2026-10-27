@@ -1,4 +1,4 @@
-import { products as localProducts, activeCoupons, type Product, type StationeryCategory } from './data/products'
+import { products as localProducts, type Product, type StationeryCategory } from './data/products'
 import type { SavedAddress } from './utils/savedAddresses'
 
 // Production calls the live API directly; do not let an old Netlify
@@ -11,7 +11,7 @@ export type ApiOrder = {
   id: string
   userId?: string
   date: string
-  items: { productId: number; quantity: number; name?: string; sku?: string; price?: number; gst?: number; discount?: number; lineTotal?: number; tax?: number }[]
+  items: { productId: number; quantity: number; name?: string; image?: string; sku?: string; price?: number; gst?: number; discount?: number; lineTotal?: number; tax?: number }[]
   total: number
   subtotal: number
   tax: number
@@ -48,11 +48,20 @@ export type ApiUser = {
   name: string
   email: string
   phone?: string
+  coin_balance?: number
+  coinBalance?: number
+  phone_verified_at?: string
   role?: string
   email_verified_at?: string
   created_at?: string
   createdAt?: string
 }
+
+export const updateAdminUser = (id: string, details: Pick<ApiUser, 'name' | 'email' | 'phone'>) =>
+  request<ApiUser>(`/api/admin/users/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(details) })
+
+export const deleteAdminUser = (id: string) =>
+  request<{ deleted: boolean }>(`/api/admin/users/${encodeURIComponent(id)}`, { method: 'DELETE' })
 
 export type AdminStats = {
   products: number
@@ -89,6 +98,9 @@ async function request<T>(route: string, options: RequestInit = {}): Promise<T> 
   })
   const body = await response.json().catch(() => ({}))
   if (!response.ok) {
+    if (response.status === 404 && route.startsWith('/api/auth/')) {
+      throw new ApiError('This sign-in route is missing from the connected backend. Start the updated local backend, or deploy the matching backend to Render and frontend to Netlify.', 404)
+    }
     const fieldErrors = body.details?.fieldErrors as Record<string, string[]> | undefined
     const formErrors = body.details?.formErrors as string[] | undefined
     const validationMessages = [
@@ -123,22 +135,6 @@ export const fetchStoreCategories = async (): Promise<StationeryCategory[]> => {
   try { return await request<StationeryCategory[]>('/api/categories') } catch { return [] }
 }
 
-export const validateCoupon = async (code: string, total: number) => {
-  try {
-    const res = await request<{ valid: boolean; coupon: { code: string; discountPct: number; minOrder: number; description: string } }>('/api/coupons/validate', {
-      method: 'POST',
-      body: JSON.stringify({ code, total }),
-    })
-    return res.coupon
-  } catch {
-    // Local fallback
-    const match = activeCoupons.find(c => c.code.toUpperCase() === code.trim().toUpperCase())
-    if (!match) throw new Error('Invalid coupon code')
-    if (total < match.minOrder) throw new Error(`Requires a minimum order of ₹${match.minOrder}`)
-    return match
-  }
-}
-
 export const signUp = async (name: string, email: string, password: string) => {
   localStorage.removeItem('abm_admin_token')
   const res = await request<{ message: string; user?: { id: string; name: string; email: string }; token?: string; autoVerified?: boolean }>('/api/auth/signup', { method: 'POST', body: JSON.stringify({ name, email, password }) })
@@ -163,6 +159,36 @@ export const customerLogin = async (email: string, password: string) => {
   return res
 }
 
+export const customerNameLogin = async (name: string, password: string) => {
+  localStorage.removeItem('abm_admin_token')
+  const res = await request<{ token?: string; user: { id: string; name: string; email?: string; phone?: string } }>('/api/auth/name/login', { method: 'POST', body: JSON.stringify({ name, password }) })
+  if (res.token) localStorage.setItem('abm_auth_token', res.token)
+  return res
+}
+
+export const requestPhoneCode = (phone: string, name: string) =>
+  request<{ message: string }>('/api/auth/phone/send-code', { method: 'POST', body: JSON.stringify({ phone, name }) })
+
+export const verifyPhoneCode = async (phone: string, code: string, name: string, password: string, confirmPassword: string) => {
+  localStorage.removeItem('abm_admin_token')
+  const res = await request<{ token?: string; user: { id: string; name: string; email?: string; phone: string; coinBalance: number } }>('/api/auth/phone/verify-code', { method: 'POST', body: JSON.stringify({ phone, code, name, password, confirmPassword }) })
+  if (res.token) localStorage.setItem('abm_auth_token', res.token)
+  return res
+}
+
+export const customerPhoneLogin = async (phone: string, password: string) => {
+  localStorage.removeItem('abm_admin_token')
+  const res = await request<{ token?: string; user: { id: string; name: string; email?: string; phone: string; coinBalance: number } }>('/api/auth/phone/login', { method: 'POST', body: JSON.stringify({ phone, password }) })
+  if (res.token) localStorage.setItem('abm_auth_token', res.token)
+  return res
+}
+
+export const fetchCustomerProfile = () =>
+  request<{ id: string; name: string; email: string; phone: string; coinBalance: number }>('/api/customer/profile')
+
+export const setCustomerCoins = (id: string, balance: number, reason?: string) =>
+  request<{ id: string; coinBalance: number }>(`/api/admin/users/${encodeURIComponent(id)}/coins`, { method: 'PATCH', body: JSON.stringify({ balance, reason }) })
+
 export const adminLogin = async (email: string, password: string) => {
   localStorage.removeItem('abm_auth_token')
   const res = await request<{ email: string; token?: string }>('/api/auth/admin/login', { method: 'POST', body: JSON.stringify({ email, password }) })
@@ -171,7 +197,7 @@ export const adminLogin = async (email: string, password: string) => {
 }
 
 export const getSession = () =>
-  request<{ role: 'customer' | 'admin'; user: { id?: string; name?: string; phone?: string; email?: string } }>('/api/auth/session')
+  request<{ role: 'customer' | 'admin'; user: { id?: string; name?: string; phone?: string; email?: string; coinBalance?: number } }>('/api/auth/session')
 
 export const logout = async () => {
   try { await request<void>('/api/auth/logout', { method: 'POST' }) } catch {}

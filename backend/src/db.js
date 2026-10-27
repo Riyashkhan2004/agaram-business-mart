@@ -88,10 +88,10 @@ export function camelOrder(row, items = []) {
       const tax = inclusiveTax
         ? Math.round(gross * Number(item.gst_rate) / (100 + Number(item.gst_rate)) * 100) / 100
         : Math.round(base * Number(item.gst_rate)) / 100
-      return { productId: Number(item.product_id), quantity: Number(item.quantity), name: item.product_name, sku: item.sku, price: Number(item.unit_price), gst: Number(item.gst_rate), discount, lineTotal: inclusiveTax ? gross : base + tax, tax }
+      return { productId: Number(item.product_id), quantity: Number(item.quantity), name: item.product_name, image: item.product_image || '', sku: item.sku, price: Number(item.unit_price), gst: Number(item.gst_rate), discount, lineTotal: inclusiveTax ? gross : base + tax, tax }
     }),
     total: Number(row.total), subtotal: Number(row.subtotal), tax: Number(row.tax), discount: inclusiveTax ? Number(row.discount || 0) : 0, couponCode: row.coupon_code || '', deliveryFee: Number(row.delivery_fee || 0), pricingVersion: Number(row.pricing_version || 1),
-    customerType: row.customer_type || 'retail', coinsEarned: Math.floor(Number(row.total) / 100),
+    customerType: row.customer_type || 'retail', coinsEarned: Number(row.coins_earned || 0),
     customerName: row.customer_name, email: row.email || '', phone: row.phone,
     address: row.address, city: row.city, pincode: row.pincode, gstin: row.gstin || '',
     status: row.status,

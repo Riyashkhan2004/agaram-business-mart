@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(254),
   password_hash TEXT,
   email_verified_at TIMESTAMPTZ,
+  phone_verified_at TIMESTAMPTZ,
+  coin_balance INTEGER NOT NULL DEFAULT 0 CHECK (coin_balance >= 0),
   name VARCHAR(120) NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -16,7 +18,11 @@ ALTER TABLE users ALTER COLUMN phone DROP NOT NULL;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(254);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS coin_balance INTEGER NOT NULL DEFAULT 0 CHECK (coin_balance >= 0);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique_idx ON users(email) WHERE email IS NOT NULL;
+CREATE INDEX IF NOT EXISTS users_name_login_idx ON users(LOWER(BTRIM(name))) WHERE password_hash IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS email_verification_tokens (
   user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -26,6 +32,15 @@ CREATE TABLE IF NOT EXISTS email_verification_tokens (
   window_started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   requests_in_window SMALLINT NOT NULL DEFAULT 1 CHECK (requests_in_window >= 1 AND requests_in_window <= 5),
   consumed_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS phone_verification_codes (
+  phone_e164 VARCHAR(16) PRIMARY KEY,
+  code_hash TEXT NOT NULL,
+  display_name VARCHAR(120),
+  expires_at TIMESTAMPTZ NOT NULL,
+  attempts SMALLINT NOT NULL DEFAULT 0,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS admins (
@@ -149,6 +164,7 @@ CREATE TABLE IF NOT EXISTS orders (
   status VARCHAR(24) NOT NULL DEFAULT 'received' CHECK (status IN ('received', 'confirmed', 'packed', 'shipped', 'delivered', 'cancelled')),
   payment_method VARCHAR(16) NOT NULL DEFAULT 'cod' CHECK (payment_method IN ('upi', 'card', 'cod')),
   payment_status VARCHAR(24) NOT NULL DEFAULT 'due_on_delivery' CHECK (payment_status IN ('pending', 'paid', 'failed', 'due_on_delivery', 'refunded')),
+  coins_earned INTEGER NOT NULL DEFAULT 0 CHECK (coins_earned >= 0),
   shipping_provider VARCHAR(120),
   tracking_number VARCHAR(160),
   tracking_url TEXT,
@@ -169,6 +185,7 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_code VARCHAR(40);
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_fee NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (delivery_fee >= 0);
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method VARCHAR(16) NOT NULL DEFAULT 'cod' CHECK (payment_method IN ('upi', 'card', 'cod'));
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_status VARCHAR(24) NOT NULL DEFAULT 'due_on_delivery' CHECK (payment_status IN ('pending', 'paid', 'failed', 'due_on_delivery', 'refunded'));
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS coins_earned INTEGER NOT NULL DEFAULT 0 CHECK (coins_earned >= 0);
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_provider VARCHAR(120);
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_number VARCHAR(160);
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_url TEXT;
@@ -195,5 +212,44 @@ CREATE TABLE IF NOT EXISTS order_items (
 );
 
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (discount_amount >= 0);
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS product_image TEXT;
+UPDATE order_items oi SET product_image = p.image FROM products p WHERE oi.product_id = p.id AND oi.product_image IS NULL;
 
 CREATE INDEX IF NOT EXISTS order_items_order_idx ON order_items (order_id);
+
+CREATE TABLE IF NOT EXISTS coin_transactions (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  order_id UUID UNIQUE REFERENCES orders(id) ON DELETE SET NULL,
+  amount INTEGER NOT NULL CHECK (amount <> 0),
+  balance_after INTEGER NOT NULL CHECK (balance_after >= 0),
+  reason VARCHAR(240) NOT NULL,
+  admin_email VARCHAR(254) REFERENCES admins(email) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS coin_transactions_user_created_idx ON coin_transactions(user_id, created_at DESC);
+
+-- Seed one-time rewards for already-delivered orders; the unique order_id makes this idempotent.
+INSERT INTO coin_transactions(user_id,order_id,amount,balance_after,reason)
+SELECT o.user_id,o.id,FLOOR(o.total / 100)::int,0,'Order delivered reward'
+FROM orders o
+WHERE o.status='delivered' AND o.user_id IS NOT NULL AND o.total >= 100 AND NOT EXISTS (SELECT 1 FROM coin_transactions ct WHERE ct.order_id=o.id)
+ON CONFLICT (order_id) DO NOTHING;
+
+UPDATE coin_transactions ct
+SET balance_after = balances.running_balance
+FROM (
+  SELECT id, SUM(amount) OVER (PARTITION BY user_id ORDER BY created_at,id ROWS UNBOUNDED PRECEDING)::int AS running_balance
+  FROM coin_transactions
+) balances
+WHERE ct.id=balances.id AND ct.balance_after=0;
+
+UPDATE users u
+SET coin_balance = COALESCE((SELECT SUM(amount)::int FROM coin_transactions ct WHERE ct.user_id=u.id),0)
+WHERE u.coin_balance=0;
+
+UPDATE orders o
+SET coins_earned = ct.amount
+FROM coin_transactions ct
+WHERE ct.order_id=o.id AND ct.amount > 0 AND o.coins_earned=0;

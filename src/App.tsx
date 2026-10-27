@@ -8,12 +8,12 @@ import {
   Zap, UploadCloud, LayoutGrid, CheckCircle, Flame
 } from 'lucide-react'
 import {
-  products as defaultProducts, categories, mergeStoreCategories, brands, sampleReviews, activeCoupons, money, unitPrice, getProductTiers,
+  products as defaultProducts, categories, mergeStoreCategories, brands, sampleReviews, money, unitPrice, getProductTiers,
   type Product, type StationeryCategory, type CategorySlug, type ProductReview, type WholesaleTier, type SubCategory
 } from './data/products'
 import {
-  API_URL, fetchProducts, fetchStoreCategories, validateCoupon, createOrder, fetchUserOrders, fetchUserAddresses, saveUserAddressesRemote,
-  fetchAdminOrders, adminLogin, customerLogin, signUp, verifyEmail, logout, getSession,
+  API_URL, fetchProducts, fetchStoreCategories, createOrder, fetchUserOrders, fetchUserAddresses, saveUserAddressesRemote,
+  fetchAdminOrders, adminLogin, customerLogin, signUp, verifyEmail, logout, getSession, fetchCustomerProfile,
   saveProduct, deleteProduct, pingBackend, type ApiOrder
 } from './api'
 import { MapLocationPickerModal } from './components/MapLocationPickerModal'
@@ -23,6 +23,7 @@ import { AccountPage as AccountProfilePage } from './pages/AccountPage'
 import { HomePage as WholesaleHomePage } from './pages/HomePage'
 import { CategoryPage as CatalogCategoryPage } from './pages/CategoryPage'
 import { ProductDetailPage as CatalogProductDetailPage } from './pages/ProductDetailPage'
+import { ConnectionExperience } from './components/ExperienceBoundary'
 
 export type Language = 'en' | 'ta'
 export type CustomerType = 'retail' | 'wholesale'
@@ -172,6 +173,10 @@ export default function App() {
   const location = useLocation()
   const navigate = useNavigate()
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }, [location.pathname])
+
   // State
   const [lang, setLang] = useState<Language>(() => readStorage<Language>('abm_lang', 'en'))
   const [theme, setTheme] = useState<ColorTheme>(() => readStorage<ColorTheme>('abm_theme', 'scooboo'))
@@ -201,7 +206,9 @@ export default function App() {
   const [userPincode, setUserPincode] = useState(() => readStorage('abm_pincode', '600001'))
   const [pincodeModalOpen, setPincodeModalOpen] = useState(false)
   const [currentUser, setCurrentUser] = useState<{ id?: string; name?: string; email?: string; phone?: string } | null>(null)
-  const [coinBalance, setCoinBalance] = useState(50)
+  const [coinBalance, setCoinBalance] = useState(0)
+  const [connectionPhase, setConnectionPhase] = useState<'loading' | 'ready' | 'offline'>('loading')
+  const [connectionRetry, setConnectionRetry] = useState(0)
   const [locationOwnerId, setLocationOwnerId] = useState<string | null>(null)
   const [mapPickerOpen, setMapPickerOpen] = useState(false)
   const [trackingModalOpen, setTrackingModalOpen] = useState(false)
@@ -225,23 +232,13 @@ export default function App() {
     let active = true
     const refreshCoinBalance = async () => {
       if (!currentUser?.id) {
-        if (active) setCoinBalance(50)
+        if (active) setCoinBalance(0)
         return
       }
-
-      const localOrders = readStorage<ApiOrder[]>('abm_orders', [])
-        .filter(order => order.userId === currentUser.id)
       try {
-        const serverOrders = await fetchUserOrders(currentUser.email, currentUser.id)
-        const ordersById = new Map<string, ApiOrder>()
-        for (const order of localOrders) ordersById.set(order.id, order)
-        for (const order of serverOrders) ordersById.set(order.id, order)
-        const earned = [...ordersById.values()].reduce((sum, order) => sum + Math.max(0, Number(order.coinsEarned) || 0), 0)
-        if (active) setCoinBalance(50 + earned)
-      } catch {
-        const earned = localOrders.reduce((sum, order) => sum + Math.max(0, Number(order.coinsEarned) || 0), 0)
-        if (active) setCoinBalance(50 + earned)
-      }
+        const profile = await fetchCustomerProfile()
+        if (active) setCoinBalance(Math.max(0, Number(profile.coinBalance) || 0))
+      } catch { /* Keep the last server-confirmed balance visible while offline. */ }
     }
 
     void refreshCoinBalance()
@@ -299,7 +296,16 @@ export default function App() {
 
   // Load backend session and products
   useEffect(() => {
-    pingBackend()
+    let active = true
+    const verifyConnection = () => {
+      if (active) setConnectionPhase('loading')
+      void pingBackend().then(healthy => { if (active) setConnectionPhase(healthy ? 'ready' : 'offline') })
+    }
+    verifyConnection()
+    const handleOffline = () => setConnectionPhase('offline')
+    const handleOnline = () => verifyConnection()
+    window.addEventListener('offline', handleOffline)
+    window.addEventListener('online', handleOnline)
     const refreshStorefrontProducts = () => fetchProducts().then(setProducts).catch(() => {})
     const refreshStorefrontCategories = () => fetchStoreCategories().then(remote => {
       if (remote.length) setStoreCategories(mergeStoreCategories(remote))
@@ -320,12 +326,15 @@ export default function App() {
       if (res && res.user) setCurrentUser(res.user)
     }).catch(() => {})
     return () => {
+      active = false
       window.clearInterval(interval)
+      window.removeEventListener('offline', handleOffline)
+      window.removeEventListener('online', handleOnline)
       window.removeEventListener('storage', onStorage)
       window.removeEventListener('abm_products_updated', onProductsUpdated)
       window.removeEventListener('abm_categories_updated', onCategoriesUpdated)
     }
-  }, [])
+  }, [connectionRetry])
 
   // Cart helper functions
   const totalCartCount = useMemo(() => cart.reduce((sum, item) => sum + item.quantity, 0), [cart])
@@ -370,6 +379,12 @@ export default function App() {
       prev.includes(productId) ? prev.filter(id => id !== productId) : [...prev, productId]
     )
   }
+
+  if (connectionPhase !== 'ready') return <ConnectionExperience
+    mode={connectionPhase}
+    retry={() => setConnectionRetry(value => value + 1)}
+    browseOffline={() => setConnectionPhase('ready')}
+  />
 
   return (
     <div className="store-shell">
@@ -484,9 +499,9 @@ export default function App() {
                       Glassmorphic Theme
                     </div>
                     {[
-                      { id: 'scooboo', name: 'Scooboo Coral', color: '#e03a1f' },
+                      { id: 'scooboo', name: 'Agaram Coral', color: '#e03a1f' },
                       { id: 'pastel', name: 'Pastel Kawaii', color: '#f43f5e' },
-                      { id: 'flipkart', name: 'Flipkart Blue', color: '#2874f0' },
+                      { id: 'flipkart', name: 'Agaram Blue', color: '#2874f0' },
                       { id: 'matcha', name: 'Matcha Forest', color: '#1e6b4f' },
                     ].map(t => (
                       <button
@@ -773,36 +788,6 @@ export default function App() {
               )}
             </div>
 
-            {/* 1-Click Available Coupons Strip */}
-            {cart.length > 0 && (
-              <div className="drawer-coupons-section" style={{ padding: '12px 16px', background: 'rgba(0,0,0,0.02)', borderTop: '1px dashed var(--line)', borderBottom: '1px dashed var(--line)' }}>
-                <div style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-soft)', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Tag size={12} /> {lang === 'ta' ? 'கூப்பன்கள் (தட்டிப் பயன்படுத்துங்கள்)' : 'Available Coupons (Tap to Apply)'}
-                </div>
-                <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
-                  {[
-                    { code: 'XEROX15', label: '15% OFF Xerox (₹999+)' },
-                    { code: 'AGARAMFIRST', label: '12% OFF First Order' },
-                    { code: 'OFFICE10', label: '10% OFF Office (₹499+)' },
-                    { code: 'RETAIL20', label: '20% OFF Bulk (₹1499+)' },
-                  ].map(c => (
-                    <button
-                      key={c.code}
-                      type="button"
-                      onClick={() => {
-                        sessionStorage.setItem('applied_coupon', c.code)
-                        alert(`Coupon ${c.code} activated! Proceed to checkout to see your discounted total.`)
-                      }}
-                      className="drawer-coupon-chip"
-                    >
-                      <span style={{ fontWeight: 800, color: 'var(--primary)', fontSize: '11px' }}>{c.code}</span>
-                      <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>{c.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Footer Summary */}
             {cart.length > 0 && (
               <div className="drawer-footer">
@@ -909,7 +894,7 @@ export default function App() {
         lang={lang}
       />
 
-      {/* 8. NATIVE ANDROID MOBILE BOTTOM NAVIGATION BAR (Flipkart / Shopsy Style) */}
+      {/* 8. NATIVE MOBILE BOTTOM NAVIGATION BAR */}
       <nav className="mobile-bottom-bar">
         <Link to="/" className={`mobile-nav-btn ${location.pathname === '/' ? 'active' : ''}`}>
           <span style={{ fontSize: '18px' }}>🏠</span>
@@ -1597,7 +1582,7 @@ function HomePage({
         <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
           <div>
             <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span>🌸</span> Japanese Imports & Aesthetic Scooboo Trends
+              <span>🌸</span> Japanese-inspired stationery and creative supplies
             </h2>
             <p className="section-subtitle">Zebra Mildliners, Sarasa Vintage gel pens, 160 GSM journals & Boba transformer pouches</p>
           </div>
@@ -2455,9 +2440,6 @@ function CheckoutPage({
   const [city, setCity] = useState('Chennai')
   const [pincode, setPincode] = useState(userPincode)
   const [gstin, setGstin] = useState('')
-  const [couponCode, setCouponCode] = useState('')
-  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discountPct: number } | null>(null)
-  const [couponError, setCouponError] = useState('')
   const paymentMode = 'cod' as const
   const [placing, setPlacing] = useState(false)
   const [orderError, setOrderError] = useState('')
@@ -2532,9 +2514,8 @@ function CheckoutPage({
     return sum + (prod ? unitPrice(prod, item.quantity, customerType) * item.quantity : 0)
   }, 0)
 
-  const discount = appliedCoupon ? Math.round((subtotal * appliedCoupon.discountPct) / 100) : 0
   const deliveryFee = subtotal >= 499 ? 0 : 49
-  const grandTotal = Math.max(0, subtotal - discount + deliveryFee)
+  const grandTotal = subtotal + deliveryFee
 
   const handleAuthSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -2566,16 +2547,6 @@ function CheckoutPage({
     }
   }
 
-  const applyCoupon = async () => {
-    setCouponError('')
-    try {
-      const match = await validateCoupon(couponCode, subtotal)
-      setAppliedCoupon(match)
-    } catch (err) {
-      setCouponError(err instanceof Error ? err.message : 'Invalid coupon')
-    }
-  }
-
   const handlePlaceOrder = async (e: FormEvent) => {
     e.preventDefault()
     setOrderError('')
@@ -2599,7 +2570,6 @@ function CheckoutPage({
       customerType,
       gstin,
       paymentMethod: paymentMode,
-      couponCode: appliedCoupon?.code,
     }
     const matchingAddress = savedAddresses.find(item => item.address === address && item.city === city && item.pincode === pincode)
     const nextAddresses: SavedAddress[] = [
@@ -2832,46 +2802,14 @@ function CheckoutPage({
           </form>
         )}
 
-        {/* Order Summary & Coupon */}
+        {/* Order Summary */}
         <div className="checkout-card">
           <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '16px' }}>Order Total</h3>
-
-          {/* Coupon Input */}
-          <div style={{ marginBottom: '18px' }}>
-            <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '6px' }}>Have a Promo Coupon?</div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <input
-                type="text"
-                value={couponCode}
-                onChange={e => setCouponCode(e.target.value)}
-                placeholder="e.g. AESTHETIC10"
-                className="pdp-pincode-input"
-                style={{ textTransform: 'uppercase' }}
-              />
-              <button type="button" onClick={applyCoupon} className="btn btn-secondary" style={{ padding: '8px 14px', fontSize: '12px' }}>
-                Apply
-              </button>
-            </div>
-            {appliedCoupon && (
-              <div style={{ color: '#15803d', fontSize: '11.5px', fontWeight: 700, marginTop: '6px' }}>
-                ✓ Coupon '{appliedCoupon.code}' applied! Saved {appliedCoupon.discountPct}%
-              </div>
-            )}
-            {couponError && (
-              <div style={{ color: '#e11d48', fontSize: '11.5px', marginTop: '6px' }}>{couponError}</div>
-            )}
-          </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px' }}>
             <span>Subtotal</span>
             <b>{money(subtotal)}</b>
           </div>
-          {discount > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px', color: '#15803d' }}>
-              <span>Coupon Discount</span>
-              <b>- {money(discount)}</b>
-            </div>
-          )}
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '14px', fontSize: '13px' }}>
             <span>Express Delivery</span>
             <span style={{ color: deliveryFee === 0 ? '#15803d' : 'inherit', fontWeight: 700 }}>
@@ -2969,6 +2907,7 @@ function InvoicePage({ products, currentUser, lang = 'en', onOpenTracking }: { p
     return {
       index: idx + 1,
       name: item.name || prod?.name || 'Stationery Item',
+      image: item.image || prod?.image || '',
       nameTa: prod?.nameTa,
       sku: item.sku || prod?.sku || '—',
       brand: prod?.brand || 'WorkDesk',
@@ -3084,11 +3023,12 @@ function InvoicePage({ products, currentUser, lang = 'en', onOpenTracking }: { p
                 <tr key={item.index}>
                   <td style={{ textAlign: 'center', color: '#64748b' }}>{item.index}</td>
                   <td>
-                    <div style={{ fontWeight: 700, color: '#0f172a' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {item.image && <img src={item.image} alt="" loading="lazy" style={{ width: 42, height: 42, objectFit: 'contain', borderRadius: 6, background: '#fff' }} />}
+                      <div style={{ fontWeight: 700, color: '#0f172a' }}>
                       {lang === 'ta' && item.nameTa ? item.nameTa : item.name}
-                    </div>
-                    <div style={{ fontSize: '10px', color: '#94a3b8' }}>
-                      {item.sku} · {item.brand}
+                      <div style={{ fontSize: '10px', color: '#94a3b8' }}>{item.sku} · {item.brand}</div>
+                      </div>
                     </div>
                   </td>
                   <td style={{ textAlign: 'center', color: '#64748b' }}>{item.hsn}</td>
@@ -3129,7 +3069,7 @@ function InvoicePage({ products, currentUser, lang = 'en', onOpenTracking }: { p
               <span>Estimated GST</span>
               <b>₹{totalGst.toFixed(2)}</b>
             </div>
-            {order.discount > 0 && <div style={{ color: '#15803d', fontSize: '11px' }}>Coupon {order.couponCode || 'discount'} applied · saved {money(order.discount)} (reflected in item totals)</div>}
+            {order.discount > 0 && <div style={{ color: '#15803d', fontSize: '11px' }}>Previous order discount · saved {money(order.discount)} (reflected in item totals)</div>}
             {order.deliveryFee ? <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}><span>Delivery fee</span><b>{money(order.deliveryFee)}</b></div> : null}
             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b', fontSize: '11.5px', paddingLeft: '10px' }}>
               <span>CGST (illustrative)</span>
@@ -4405,7 +4345,7 @@ function AboutPage() {
         About Agaram Stationery Mart
       </h1>
       <p style={{ fontSize: '15px', lineHeight: 1.8, color: 'var(--text-muted)', marginBottom: '20px' }}>
-        Agaram Business Mart was founded to bridge the gap between aesthetic Japanese/Korean stationery culture and everyday Indian school & college needs. Inspired by stores like Scooboo and e-commerce leaders like Amazon and Flipkart, we offer high-grade stationery tools, fast delivery, and bulk institutional pricing.
+        Agaram Business Mart brings carefully selected stationery to Indian school, college, and office customers, with dependable delivery and transparent bulk pricing.
       </p>
     </div>
   )

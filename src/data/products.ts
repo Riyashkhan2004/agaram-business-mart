@@ -1211,7 +1211,7 @@ export const products: Product[] = [
   },
 
   // =========================================================================
-  // 6. SCOOBOO AESTHETIC HIGHLIGHTS & BEST SELLERS
+  // 6. AGARAM AESTHETIC HIGHLIGHTS & BEST SELLERS
   // =========================================================================
   {
     id: 1,
@@ -1223,7 +1223,7 @@ export const products: Product[] = [
     mrp: 550,
     unit: 'Set of 5 colors',
     image: img('photo-1585776245991-cf89dd7fc73a'),
-    badge: 'Scooboo Bestseller',
+    badge: 'Agaram Favorite',
     deliveryTime: '30 MINS',
     description: 'The cult-favourite Japanese aesthetic double-ended highlighters featuring mild, water-resistant pastel ink that won’t bleed through notebook paper. Includes broad chisel tip and fine bullet tip.',
     stock: 120,
@@ -1377,13 +1377,6 @@ export const sampleReviews: Record<number, ProductReview[]> = {
     },
   ],
 }
-
-export const activeCoupons: { code: string; discountPct: number; minOrder: number; description: string }[] = [
-  { code: 'XEROX15', discountPct: 15, minOrder: 999, description: '15% OFF for Xerox & Print Shop Orders over ₹999' },
-  { code: 'RETAIL20', discountPct: 20, minOrder: 1499, description: '20% OFF for Retailers & Bulk Cartons' },
-  { code: 'OFFICE10', discountPct: 10, minOrder: 499, description: '10% OFF on Corporate Office Desk Supplies' },
-  { code: 'AGARAMFIRST', discountPct: 12, minOrder: 299, description: 'Welcome treat: 12% OFF on your first purchase' },
-]
 
 export const money = (value: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(value)

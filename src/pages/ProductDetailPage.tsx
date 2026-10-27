@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { Star, ShieldCheck, Heart, ShoppingBag, Truck, RotateCcw, Award, Check } from 'lucide-react'
+import { Star, ShieldCheck, Heart, ShoppingBag, Truck, Banknote, Award, Check } from 'lucide-react'
 import { money, type Product, getProductGallery, getProductTiers, unitPrice } from '../data/products'
 
 interface ProductDetailPageProps {
@@ -302,8 +302,8 @@ export function ProductDetailPage({
                 <div style={{ fontSize: '11px', fontWeight: 800 }}>100% Genuine</div>
               </div>
               <div style={{ textAlign: 'center', padding: '10px', background: '#f8fafc', borderRadius: '10px' }}>
-                <RotateCcw size={20} color="#7c3aed" style={{ margin: 'auto', marginBottom: '4px' }} />
-                <div style={{ fontSize: '11px', fontWeight: 800 }}>Easy Returns</div>
+                <Banknote size={20} color="#7c3aed" style={{ margin: 'auto', marginBottom: '4px' }} />
+                <div style={{ fontSize: '11px', fontWeight: 800 }}>Cash on Delivery</div>
               </div>
             </div>
           </div>

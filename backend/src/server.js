@@ -4,7 +4,7 @@ import cors from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import bcrypt from 'bcryptjs'
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import nodemailer from 'nodemailer'
 import { camelOrder, camelProduct, pool } from './db.js'
@@ -57,6 +57,8 @@ app.use('/api', (req, res, next) => {
 })
 app.use('/api', rateLimit({ windowMs: 15 * 60 * 1000, limit: 2000, standardHeaders: 'draft-8', legacyHeaders: false }))
 app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 200, standardHeaders: 'draft-8', legacyHeaders: false }))
+app.use('/api/auth/phone', rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: 'draft-8', legacyHeaders: false }))
+app.use('/api/location', rateLimit({ windowMs: 60 * 60 * 1000, limit: 60, standardHeaders: 'draft-8', legacyHeaders: false }))
 
 const phoneSchema = z.string().trim().transform(value => value.replace(/[\s()-]/g, '')).refine(value => /^(\+91)?[6-9]\d{9}$/.test(value), 'Enter a valid Indian mobile number').transform(value => value.startsWith('+91') ? value : `+91${value}`)
 const productSchema = z.object({
@@ -106,7 +108,6 @@ const orderSchema = z.object({
   address: z.string().trim().min(5).max(500), city: z.string().trim().min(1).max(100),
   pincode: z.string().trim().regex(/^\d{6}$/), gstin: z.string().trim().max(20).optional(),
   paymentMethod: z.literal('cod').default('cod'), customerNotes: z.string().trim().max(1000).optional(),
-  couponCode: z.string().trim().max(40).optional(),
 }).refine(order => new Set(order.items.map(item => item.productId)).size === order.items.length, 'Each product should appear once')
 const orderDetailsSchema = z.object({
   paymentStatus: z.enum(['pending', 'paid', 'failed', 'due_on_delivery', 'refunded']).optional(),
@@ -162,13 +163,13 @@ async function createSession({ userId, adminEmail: email, lifetimeHours }) {
 async function loadSession(req) {
   const token = readSessionCookie(req)
   if (!token || token.length > 128) return null
-  const result = await pool.query(`SELECT s.user_id,s.admin_email,u.phone,u.name,u.email
+  const result = await pool.query(`SELECT s.user_id,s.admin_email,u.phone,u.name,u.email,u.coin_balance
     FROM user_sessions s LEFT JOIN users u ON u.id=s.user_id
-    WHERE s.token_hash=$1 AND s.revoked_at IS NULL AND s.expires_at>NOW()`, [hashSession(token)])
+    WHERE s.token_hash=$1 AND s.revoked_at IS NULL AND s.expires_at>NOW() AND (s.user_id IS NULL OR u.deleted_at IS NULL)`, [hashSession(token)])
   const row = result.rows[0]
   if (!row) return null
   return row.user_id
-    ? { role: 'customer', sub: row.user_id, phone: row.phone, name: row.name, email: row.email }
+    ? { role: 'customer', sub: row.user_id, phone: row.phone, name: row.name, email: row.email, coinBalance: Number(row.coin_balance || 0) }
     : { role: 'admin', sub: row.admin_email, email: row.admin_email }
 }
 
@@ -279,6 +280,34 @@ async function sendVerificationEmail(email, name, token) {
   return { sent: false, verifyUrl: verifyUrl.href }
 }
 
+async function sendPhoneVerificationCode(phone, code) {
+  if (!production) {
+    console.info(`[LOCAL PHONE OTP] ${phone}: ${code}`)
+    return
+  }
+  const accountSid = process.env.TWILIO_ACCOUNT_SID
+  const authToken = process.env.TWILIO_AUTH_TOKEN
+  const from = process.env.TWILIO_FROM_NUMBER
+  if (!accountSid || !authToken || !from) {
+    throw Object.assign(new Error('Phone verification SMS is not configured.'), { status: 503 })
+  }
+  const form = new URLSearchParams({
+    To: phone,
+    From: from,
+    Body: `Your Agaram verification code is ${code}. It expires in 5 minutes.`,
+  })
+  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString('base64')}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: form.toString(),
+    signal: AbortSignal.timeout(10000),
+  })
+  if (!response.ok) throw Object.assign(new Error('The verification text could not be sent. Check SMS provider settings.'), { status: 502 })
+}
+
 async function createAndSendVerification(user) {
   const token = randomBytes(32).toString('base64url')
   const tokenHash = createHash('sha256').update(token).digest('hex')
@@ -331,6 +360,56 @@ app.get('/api/health', async (_req, res) => {
     res.status(503).json({ ok: false, service: 'agaram-api', database: 'unavailable' })
   }
 })
+
+let reverseGeocodeQueue = Promise.resolve()
+let reverseGeocodeLastRequestAt = 0
+const reverseGeocodeCache = new Map()
+async function reverseGeocode(latitude, longitude) {
+  const key = `${latitude.toFixed(5)},${longitude.toFixed(5)}`
+  if (reverseGeocodeCache.has(key)) return reverseGeocodeCache.get(key)
+  const lookup = reverseGeocodeQueue.then(async () => {
+    if (reverseGeocodeCache.has(key)) return reverseGeocodeCache.get(key)
+    const pause = Math.max(0, 1100 - (Date.now() - reverseGeocodeLastRequestAt))
+    if (pause) await new Promise(resolve => setTimeout(resolve, pause))
+    reverseGeocodeLastRequestAt = Date.now()
+    const query = new URLSearchParams({ format: 'jsonv2', addressdetails: '1', zoom: '18', lat: String(latitude), lon: String(longitude) })
+    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?${query}`, {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': process.env.GEOCODER_USER_AGENT || 'AgaramBusinessMart/1.0 (https://agaram-business-mart.netlify.app)',
+      },
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!response.ok) throw Object.assign(new Error('Address lookup is temporarily unavailable.'), { status: 502 })
+    const result = await response.json()
+    const address = result.address || {}
+    const road = [address.house_number, address.road || address.pedestrian || address.footway].filter(Boolean).join(' ')
+    const locality = address.neighbourhood || address.suburb || address.quarter || address.residential || ''
+    const city = address.city || address.town || address.village || address.municipality || address.county || ''
+    const pin = String(address.postcode || '').match(/\b\d{6}\b/)?.[0] || ''
+    const resolved = {
+      address: [...new Set([road, locality, address.hamlet || address.village].filter(Boolean))].join(', ') || result.display_name || '',
+      city,
+      pincode: pin,
+      displayAddress: result.display_name || '',
+    }
+    reverseGeocodeCache.set(key, resolved)
+    if (reverseGeocodeCache.size > 500) reverseGeocodeCache.delete(reverseGeocodeCache.keys().next().value)
+    return resolved
+  })
+  reverseGeocodeQueue = lookup.catch(() => {})
+  return lookup
+}
+
+app.get('/api/location/reverse', async (req, res) => {
+  const parsed = z.object({
+    lat: z.coerce.number().min(-90).max(90),
+    lon: z.coerce.number().min(-180).max(180),
+  }).safeParse(req.query)
+  if (!parsed.success) return res.status(400).json({ error: 'Enter valid GPS coordinates.' })
+  res.setHeader('Cache-Control', 'private, max-age=86400')
+  res.json(await reverseGeocode(parsed.data.lat, parsed.data.lon))
+})
 app.get('/api/products', async (req, res) => {
   const values = []
   const filters = ['active = TRUE']
@@ -351,20 +430,6 @@ app.get('/api/products/:id', async (req, res) => {
   if (!result.rows[0]) return res.status(404).json({ error: 'Product not found' })
   res.json(safeProduct(result.rows[0]))
 })
-app.post('/api/coupons/validate', (req, res) => {
-  const { code, total } = req.body || {}
-  const coupons = [
-    { code: 'XEROX15', discountPct: 15, minOrder: 999, description: '15% OFF for Xerox & Print Shop Orders over ₹999' },
-    { code: 'RETAIL20', discountPct: 20, minOrder: 1499, description: '20% OFF for Retailers & Bulk Cartons' },
-    { code: 'OFFICE10', discountPct: 10, minOrder: 499, description: '10% OFF on Corporate Office Desk Supplies' },
-    { code: 'AGARAMFIRST', discountPct: 12, minOrder: 299, description: 'Welcome treat: 12% OFF on your first purchase' },
-  ]
-  const match = coupons.find(c => c.code.toUpperCase() === String(code || '').trim().toUpperCase())
-  if (!match) return res.status(404).json({ error: 'Invalid coupon code' })
-  if (total && total < match.minOrder) return res.status(400).json({ error: `Requires a minimum order of ₹${match.minOrder}` })
-  res.json({ valid: true, coupon: match })
-})
-
 app.post('/api/auth/signup', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store')
   const parsed = z.object({ name: z.string().trim().min(2).max(120), email: z.string().trim().email().max(254), password: z.string().min(10).max(72) }).safeParse(req.body)
@@ -401,6 +466,133 @@ app.post('/api/auth/signup', async (req, res) => {
     user: { id: user.id, name: user.name, email: user.email },
     autoVerified: true
   })
+})
+
+app.post('/api/auth/phone/send-code', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
+  const parsed = z.object({
+    phone: phoneSchema,
+    name: z.string().trim().min(2).max(120).optional(),
+  }).safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'Enter a valid mobile number and account name.' })
+  const { phone, name } = parsed.data
+  const registered = await pool.query('SELECT id FROM users WHERE phone=$1 AND deleted_at IS NULL', [phone])
+  if (!registered.rowCount && !name) return res.status(400).json({ error: 'Enter your name to create an account with this phone number.' })
+  if (registered.rowCount && name) return res.status(409).json({ error: 'This phone number already has an account. Sign in with your name and password.' })
+  const previous = await pool.query('SELECT sent_at FROM phone_verification_codes WHERE phone_e164=$1', [phone])
+  if (previous.rowCount && Date.now() - new Date(previous.rows[0].sent_at).getTime() < 30_000) {
+    return res.status(429).json({ error: 'Please wait 30 seconds before requesting another code.' })
+  }
+  const code = String(randomInt(0, 1_000_000)).padStart(6, '0')
+  const codeHash = await bcrypt.hash(code, 10)
+  await pool.query(`INSERT INTO phone_verification_codes(phone_e164,code_hash,display_name,expires_at,attempts,sent_at)
+    VALUES($1,$2,$3,NOW()+INTERVAL '5 minutes',0,NOW())
+    ON CONFLICT(phone_e164) DO UPDATE SET code_hash=EXCLUDED.code_hash,display_name=EXCLUDED.display_name,
+      expires_at=EXCLUDED.expires_at,attempts=0,sent_at=NOW()`, [phone, codeHash, name || null])
+  try {
+    await sendPhoneVerificationCode(phone, code)
+  } catch (error) {
+    await pool.query('DELETE FROM phone_verification_codes WHERE phone_e164=$1', [phone])
+    throw error
+  }
+  res.json({ message: production ? 'Verification code sent. It expires in 5 minutes.' : 'Local verification code generated. Check the backend terminal. It expires in 5 minutes.' })
+})
+
+app.post('/api/auth/phone/verify-code', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
+  const parsed = z.object({
+    phone: phoneSchema,
+    code: z.string().trim().regex(/^\d{6}$/),
+    name: z.string().trim().min(2).max(120).optional(),
+    password: z.string().min(10).max(72).optional(),
+    confirmPassword: z.string().min(10).max(72).optional(),
+  }).refine(data => !data.password || data.password === data.confirmPassword, { path: ['confirmPassword'], message: 'Passwords do not match.' }).safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Enter valid account details and the 6-digit verification code.' })
+  const client = await pool.connect()
+  let user
+  try {
+    await client.query('BEGIN')
+    const codeResult = await client.query('SELECT * FROM phone_verification_codes WHERE phone_e164=$1 FOR UPDATE', [parsed.data.phone])
+    const verification = codeResult.rows[0]
+    if (!verification || new Date(verification.expires_at).getTime() <= Date.now()) {
+      await client.query('DELETE FROM phone_verification_codes WHERE phone_e164=$1', [parsed.data.phone])
+      await client.query('COMMIT')
+      return res.status(400).json({ error: 'That code expired. Request a new verification code.' })
+    }
+    if (Number(verification.attempts) >= 5) {
+      await client.query('DELETE FROM phone_verification_codes WHERE phone_e164=$1', [parsed.data.phone])
+      await client.query('COMMIT')
+      return res.status(429).json({ error: 'Too many incorrect attempts. Request a new verification code.' })
+    }
+    if (!await bcrypt.compare(parsed.data.code, verification.code_hash)) {
+      await client.query('UPDATE phone_verification_codes SET attempts=attempts+1 WHERE phone_e164=$1', [parsed.data.phone])
+      await client.query('COMMIT')
+      return res.status(400).json({ error: 'That verification code is incorrect.' })
+    }
+    const found = await client.query('SELECT id,name,email,phone,coin_balance FROM users WHERE phone=$1 AND deleted_at IS NULL FOR UPDATE', [parsed.data.phone])
+    if (found.rowCount) {
+      user = found.rows[0]
+      user = (await client.query(`UPDATE users SET phone_verified_at=NOW(),
+        name=CASE WHEN $2::varchar IS NOT NULL AND length(trim(name))=0 THEN $2 ELSE name END,updated_at=NOW()
+        WHERE id=$1 RETURNING id,name,email,phone,coin_balance`, [user.id, verification.display_name])).rows[0]
+    } else {
+      if (!verification.display_name || !parsed.data.name || !parsed.data.password || !parsed.data.confirmPassword) {
+        await client.query('ROLLBACK')
+        return res.status(400).json({ error: 'Enter your name, password and matching confirmation to finish creating your account.' })
+      }
+      if (verification.display_name.toLowerCase() !== parsed.data.name.trim().toLowerCase()) {
+        await client.query('ROLLBACK')
+        return res.status(400).json({ error: 'The account name changed after the code was sent. Request a new code.' })
+      }
+      const passwordHash = await bcrypt.hash(parsed.data.password, 12)
+      const inserted = await client.query(`INSERT INTO users(phone,phone_verified_at,name,password_hash)
+        VALUES($1,NOW(),$2,$3) RETURNING id,name,email,phone,coin_balance`, [parsed.data.phone, verification.display_name, passwordHash])
+      user = inserted.rows[0]
+    }
+    await client.query('DELETE FROM phone_verification_codes WHERE phone_e164=$1', [parsed.data.phone])
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    if (error.code === '23505') return res.status(409).json({ error: 'This phone number is already connected to another account.' })
+    throw error
+  } finally { client.release() }
+  const session = await createSession({ userId: user.id, lifetimeHours: 12 })
+  setSessionCookie(res, session.token, 12 * 60 * 60)
+  res.json({ token: session.token, user: { id: user.id, name: user.name, email: user.email || '', phone: user.phone, coinBalance: Number(user.coin_balance || 0) } })
+})
+
+app.post('/api/auth/phone/login', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
+  const parsed = z.object({ phone: phoneSchema, password: z.string().min(1).max(72) }).safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'Enter your phone number and password.' })
+  const result = await pool.query('SELECT id,name,email,phone,password_hash,phone_verified_at,coin_balance FROM users WHERE phone=$1 AND deleted_at IS NULL', [parsed.data.phone])
+  const user = result.rows[0]
+  const valid = await bcrypt.compare(parsed.data.password, user?.password_hash || dummyPasswordHash)
+  if (!user || !valid) return res.status(401).json({ error: 'Phone number or password is incorrect.' })
+  if (!user.phone_verified_at) return res.status(403).json({ error: 'Verify this phone number with a one-time code before signing in.' })
+  const session = await createSession({ userId: user.id, lifetimeHours: 12 })
+  setSessionCookie(res, session.token, 12 * 60 * 60)
+  res.json({ token: session.token, user: { id: user.id, name: user.name, email: user.email || '', phone: user.phone, coinBalance: Number(user.coin_balance || 0) } })
+})
+
+app.post('/api/auth/name/login', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
+  const parsed = z.object({ name: z.string().trim().min(2).max(120), password: z.string().min(1).max(72) }).safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'Enter your account name and password.' })
+  const result = await pool.query(`SELECT id,name,email,phone,password_hash,coin_balance
+    FROM users WHERE LOWER(BTRIM(name))=LOWER(BTRIM($1)) AND password_hash IS NOT NULL AND deleted_at IS NULL
+    ORDER BY created_at DESC LIMIT 25`, [parsed.data.name])
+  let user = null
+  for (const candidate of result.rows) {
+    if (await bcrypt.compare(parsed.data.password, candidate.password_hash)) { user = candidate; break }
+  }
+  if (!user) {
+    if (!result.rowCount) await bcrypt.compare(parsed.data.password, dummyPasswordHash)
+    return res.status(401).json({ error: 'Name or password is incorrect.' })
+  }
+  const session = await createSession({ userId: user.id, lifetimeHours: 12 })
+  setSessionCookie(res, session.token, 12 * 60 * 60)
+  res.json({ token: session.token, user: { id: user.id, name: user.name, email: user.email || '', phone: user.phone || '', coinBalance: Number(user.coin_balance || 0) } })
 })
 
 app.post('/api/auth/email/resend', async (req, res) => {
@@ -461,7 +653,7 @@ app.post('/api/auth/login', async (req, res) => {
   const parsed = z.object({ email: z.string().trim().email().max(254), password: z.string().min(1).max(200) }).safeParse(req.body)
   if (!parsed.success) return res.status(400).json({ error: 'Enter a valid email and password' })
   const email = parsed.data.email.toLowerCase()
-  const result = await pool.query('SELECT id,email,name,phone,password_hash,email_verified_at FROM users WHERE email=$1', [email])
+  const result = await pool.query('SELECT id,email,name,phone,password_hash,email_verified_at FROM users WHERE email=$1 AND deleted_at IS NULL', [email])
   const user = result.rows[0]
   const valid = await bcrypt.compare(parsed.data.password, user?.password_hash || dummyPasswordHash)
   if (!user || !valid) return res.status(401).json({ error: 'Email or password is incorrect' })
@@ -493,7 +685,7 @@ app.get('/api/auth/session', async (req, res, next) => {
     const session = await loadSession(req)
     if (!session) return res.status(401).json({ error: 'No active session' })
     res.json(session.role === 'customer'
-      ? { role: session.role, user: { id: session.sub, name: session.name, phone: session.phone, email: session.email } }
+      ? { role: session.role, user: { id: session.sub, name: session.name, phone: session.phone, email: session.email, coinBalance: session.coinBalance } }
       : { role: session.role, user: { email: session.email } })
   } catch (error) { next(error) }
 })
@@ -680,20 +872,7 @@ app.post('/api/orders', async (req, res) => {
       lines.push({ item, product, unitCents, lineCents })
     }
 
-    const activeCoupons = [
-      { code: 'XEROX15', discountPct: 15, minOrder: 999 },
-      { code: 'RETAIL20', discountPct: 20, minOrder: 1499 },
-      { code: 'OFFICE10', discountPct: 10, minOrder: 499 },
-      { code: 'AGARAMFIRST', discountPct: 12, minOrder: 299 },
-    ]
-    let discountCents = 0
-    if (customer.couponCode) {
-      const coupon = activeCoupons.find(value => value.code === customer.couponCode?.toUpperCase())
-      if (!coupon) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Invalid coupon code' }) }
-      if (subtotalCents < coupon.minOrder * 100) { await client.query('ROLLBACK'); return res.status(400).json({ error: `Coupon ${coupon.code} requires a minimum order of ₹${coupon.minOrder}` }) }
-      discountCents = Math.round(subtotalCents * coupon.discountPct / 100)
-    }
-
+    const discountCents = 0
     const deliveryFeeCents = subtotalCents >= 49900 ? 0 : 4900
     let allocatedDiscountCents = 0
     let taxCents = 0
@@ -711,15 +890,15 @@ app.post('/api/orders', async (req, res) => {
     const orderNo = `ABM${Date.now().toString(36).toUpperCase()}${randomUUID().slice(0,4).toUpperCase()}`
     const paymentStatus = customer.paymentMethod === 'cod' ? 'due_on_delivery' : 'pending'
     const initialHistory = [{ status: 'received', at: new Date().toISOString(), note: 'Order placed' }]
-    const inserted = await client.query(`INSERT INTO orders(order_no,user_id,customer_name,phone,email,address,city,pincode,gstin,subtotal,discount,coupon_code,delivery_fee,tax,total,customer_type,pricing_version,payment_method,payment_status,customer_notes,status_history)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
-      [orderNo, userId, customer.customerName, customer.phone, customer.email || sessionUser?.email || null, customer.address, customer.city, customer.pincode, customer.gstin || null, subtotalCents/100, discountCents/100, customer.couponCode?.toUpperCase() || null, deliveryFeeCents/100, taxCents/100, (subtotalCents-discountCents+deliveryFeeCents)/100, customer.customerType, 2, customer.paymentMethod, paymentStatus, customer.customerNotes || null, JSON.stringify(initialHistory)])
+    const inserted = await client.query(`INSERT INTO orders(order_no,user_id,customer_name,phone,email,address,city,pincode,gstin,subtotal,discount,delivery_fee,tax,total,customer_type,pricing_version,payment_method,payment_status,customer_notes,status_history)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
+      [orderNo, userId, customer.customerName, customer.phone, customer.email || sessionUser?.email || null, customer.address, customer.city, customer.pincode, customer.gstin || null, subtotalCents/100, discountCents/100, deliveryFeeCents/100, taxCents/100, (subtotalCents+deliveryFeeCents)/100, customer.customerType, 2, customer.paymentMethod, paymentStatus, customer.customerNotes || null, JSON.stringify(initialHistory)])
     const order = inserted.rows[0]
 
     for (const line of lines) {
       await client.query('UPDATE products SET stock=stock-$1,updated_at=NOW() WHERE id=$2', [line.item.quantity, line.product.id])
-      await client.query(`INSERT INTO order_items(order_id,product_id,product_name,sku,quantity,unit_price,gst_rate,discount_amount)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, [order.id, line.product.id, line.product.name, line.product.sku, line.item.quantity, line.unitCents/100, line.product.gst, line.discountCents/100])
+      await client.query(`INSERT INTO order_items(order_id,product_id,product_name,product_image,sku,quantity,unit_price,gst_rate,discount_amount)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [order.id, line.product.id, line.product.name, line.product.image || null, line.product.sku, line.item.quantity, line.unitCents/100, line.product.gst, line.discountCents/100])
     }
     const itemRows = await client.query('SELECT * FROM order_items WHERE order_id=$1 ORDER BY id', [order.id])
     await client.query('COMMIT')
@@ -805,7 +984,7 @@ app.patch('/api/admin/orders/:id/status', authorize('admin'), async (req, res) =
   try {
     client = await pool.connect()
     await client.query('BEGIN')
-    const existing = await client.query('SELECT id,status FROM orders WHERE order_no=$1 OR id::text=$1 FOR UPDATE', [req.params.id])
+    const existing = await client.query('SELECT id,status,user_id,total,coins_earned FROM orders WHERE order_no=$1 OR id::text=$1 FOR UPDATE', [req.params.id])
     if (!existing.rowCount) {
       await client.query('ROLLBACK')
       return res.status(404).json({ error: 'Order not found' })
@@ -817,6 +996,17 @@ app.patch('/api/admin/orders/:id/status', authorize('admin'), async (req, res) =
     const result = await client.query(`UPDATE orders SET status=$1::varchar, updated_at=NOW(),
       status_history=COALESCE(status_history,'[]'::jsonb) || jsonb_build_array(jsonb_build_object('status',$1::varchar,'at',NOW(),'note',$3::text))
       WHERE id=$2 RETURNING *`, [status, existing.rows[0].id, orderStatusNotes[status] || 'Order status updated'])
+    const order = existing.rows[0]
+    if (status === 'delivered' && order.status !== 'delivered' && order.user_id && Number(order.coins_earned || 0) === 0) {
+      const reward = Math.floor(Number(order.total) / 100)
+      const priorReward = await client.query('SELECT id FROM coin_transactions WHERE order_id=$1', [order.id])
+      if (reward > 0 && !priorReward.rowCount) {
+        const balance = await client.query('UPDATE users SET coin_balance=coin_balance+$2,updated_at=NOW() WHERE id=$1 RETURNING coin_balance', [order.user_id, reward])
+        await client.query('UPDATE orders SET coins_earned=$1 WHERE id=$2', [reward, order.id])
+        await client.query(`INSERT INTO coin_transactions(user_id,order_id,amount,balance_after,reason)
+          VALUES($1,$2,$3,$4,'Order delivered reward') ON CONFLICT(order_id) DO NOTHING`, [order.user_id, order.id, reward, Number(balance.rows[0]?.coin_balance || 0)])
+      }
+    }
     await client.query('COMMIT')
     return res.json({ success: true, order: result.rows[0] })
   } catch (error) {
@@ -860,8 +1050,79 @@ app.delete('/api/admin/orders/:id', authorize('admin'), async (req, res) => {
 })
 
 app.get('/api/admin/users', authorize('admin'), async (_req, res) => {
-  const result = await pool.query('SELECT id, name, email, phone, email_verified_at, created_at FROM users ORDER BY created_at DESC LIMIT 200')
+  const result = await pool.query('SELECT id, name, email, phone, coin_balance, phone_verified_at, email_verified_at, created_at FROM users WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 200')
   res.json(result.rows)
+})
+
+app.patch('/api/admin/users/:id', authorize('admin'), async (req, res) => {
+  const parsed = z.object({
+    name: z.string().trim().min(2).max(120),
+    email: z.union([z.string().trim().email().max(254), z.literal('')]),
+    phone: z.union([phoneSchema, z.literal('')]),
+  }).safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'Enter a valid name, email, and phone number.' })
+  try {
+    const result = await pool.query(`UPDATE users SET name=$2,email=$3,phone=$4,updated_at=NOW()
+      WHERE id=$1 AND deleted_at IS NULL
+      RETURNING id,name,email,phone,coin_balance,phone_verified_at,email_verified_at,created_at`,
+    [req.params.id, parsed.data.name, parsed.data.email.toLowerCase() || null, parsed.data.phone || null])
+    if (!result.rowCount) return res.status(404).json({ error: 'Customer not found.' })
+    res.json(result.rows[0])
+  } catch (error) {
+    if (error.code === '23505') return res.status(409).json({ error: 'That email or phone number is already used by another customer.' })
+    throw error
+  }
+})
+
+app.delete('/api/admin/users/:id', authorize('admin'), async (req, res) => {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const result = await client.query(`UPDATE users SET name='Removed customer',email=NULL,phone=NULL,password_hash=NULL,
+      phone_verified_at=NULL,email_verified_at=NULL,coin_balance=0,deleted_at=NOW(),updated_at=NOW()
+      WHERE id=$1 AND deleted_at IS NULL RETURNING id`, [req.params.id])
+    if (!result.rowCount) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Customer not found.' }) }
+    await client.query('UPDATE user_sessions SET revoked_at=NOW() WHERE user_id=$1 AND revoked_at IS NULL', [req.params.id])
+    await client.query('DELETE FROM user_addresses WHERE user_id=$1', [req.params.id])
+    await client.query(`UPDATE orders SET customer_name='Removed customer',phone='0000000000',email=NULL,address='Removed',city='Removed',pincode='000000'
+      WHERE user_id=$1`, [req.params.id])
+    await client.query('COMMIT')
+    res.json({ deleted: true })
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw error
+  } finally { client.release() }
+})
+
+app.patch('/api/admin/users/:id/coins', authorize('admin'), async (req, res) => {
+  const parsed = z.object({ balance: z.number().int().min(0).max(1_000_000_000), reason: z.string().trim().max(200).optional() }).safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'Coin balance must be a whole number between 0 and 1,000,000,000.' })
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const result = await client.query('SELECT id,coin_balance FROM users WHERE id=$1 FOR UPDATE', [req.params.id])
+    if (!result.rowCount) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Customer not found.' }) }
+    const previous = Number(result.rows[0].coin_balance || 0)
+    const balance = parsed.data.balance
+    const delta = balance - previous
+    if (delta) {
+      await client.query('UPDATE users SET coin_balance=$2,updated_at=NOW() WHERE id=$1', [req.params.id, balance])
+      await client.query(`INSERT INTO coin_transactions(user_id,amount,balance_after,reason,admin_email)
+        VALUES($1,$2,$3,$4,$5)`, [req.params.id, delta, balance, parsed.data.reason || 'Admin balance adjustment', req.auth.email])
+    }
+    await client.query('COMMIT')
+    res.json({ id: req.params.id, coinBalance: balance })
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw error
+  } finally { client.release() }
+})
+
+app.get('/api/customer/profile', authorize('customer'), async (req, res) => {
+  const result = await pool.query('SELECT id,name,email,phone,coin_balance FROM users WHERE id=$1 AND deleted_at IS NULL', [req.auth.sub])
+  if (!result.rowCount) return res.status(404).json({ error: 'Customer account not found.' })
+  const user = result.rows[0]
+  res.json({ id: user.id, name: user.name, email: user.email || '', phone: user.phone, coinBalance: Number(user.coin_balance || 0) })
 })
 
 app.get('/api/admin/stats', authorize('admin'), async (_req, res) => {

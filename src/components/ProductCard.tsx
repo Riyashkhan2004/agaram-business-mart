@@ -57,7 +57,7 @@ export function ProductCard({
       }}
     >
       {/* Top Image & Floating Badges */}
-      <div style={{ position: 'relative', width: '100%', marginBottom: '8px' }}>
+      <div className="instamart-card-media" style={{ position: 'relative', width: '100%', marginBottom: '8px' }}>
         {/* Wishlist Heart Button */}
         <button
           type="button"
@@ -144,6 +144,7 @@ export function ProductCard({
         {/* Product Image Clickable Link */}
         <Link
           to={`/product/${product.id}`}
+          className="instamart-card-image-link"
           style={{
             display: 'block',
             width: '100%',
@@ -173,16 +174,17 @@ export function ProductCard({
       </div>
 
       {/* Info Body */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+      <div className="instamart-card-info" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
         <div>
           {/* Brand & Unit */}
-          <div style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 700, marginBottom: '2px' }}>
+          <div className="instamart-card-brand" style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 700, marginBottom: '2px' }}>
             {product.brand} · {product.unit}
           </div>
 
           {/* Title */}
           <Link
             to={`/product/${product.id}`}
+            className="instamart-card-title"
             style={{
               fontSize: '12.5px',
               fontWeight: 800,
@@ -219,9 +221,9 @@ export function ProductCard({
         </div>
 
         {/* Price & Add Stepper Row */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px', paddingTop: '6px', borderTop: '1px solid #f1f5f9' }}>
-          <div>
-            <div style={{ fontSize: '14.5px', fontWeight: 900, color: '#0f172a' }}>
+        <div className="instamart-card-price-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px', paddingTop: '6px', borderTop: '1px solid #f1f5f9' }}>
+          <div className="instamart-card-price-wrap">
+            <div className="instamart-card-price" style={{ fontSize: '14.5px', fontWeight: 900, color: '#0f172a' }}>
               {money(effectivePrice)}
             </div>
             {product.mrp > effectivePrice && (
@@ -232,9 +234,10 @@ export function ProductCard({
           </div>
 
           {/* Instamart Morphing "+ ADD" / "- Qty +" Button */}
-          <div>
+          <div className="instamart-card-action">
             {cartQty > 0 ? (
               <div
+                className="instamart-card-stepper"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -284,6 +287,7 @@ export function ProductCard({
             ) : (
               <button
                 type="button"
+                className="instamart-card-add-button"
                 onClick={() => onAddToCart(product.id, 1)}
                 disabled={product.stock <= 0}
                 style={{

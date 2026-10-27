@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { X, Trash2, Plus, Minus, ArrowRight, ShieldCheck, Ticket } from 'lucide-react'
+import { X, Trash2, Plus, Minus, ArrowRight, ShieldCheck } from 'lucide-react'
 import { money, type Product } from '../data/products'
 
 interface CartDrawerProps {
@@ -25,8 +25,6 @@ export function CartDrawer({
   lang = 'en'
 }: CartDrawerProps) {
   const navigate = useNavigate()
-  const [couponCode, setCouponCode] = useState('')
-  const [appliedDiscount, setAppliedDiscount] = useState(0)
 
   if (!isOpen) return null
 
@@ -38,7 +36,7 @@ export function CartDrawer({
 
   const subtotal = cartItemsWithDetails.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0)
   const gst = Math.round(subtotal * 0.18)
-  const grandTotal = Math.max(0, subtotal + gst - appliedDiscount)
+  const grandTotal = Math.max(0, subtotal + gst)
 
   const handleProceed = () => {
     onClose()

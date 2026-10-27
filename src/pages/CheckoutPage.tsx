@@ -140,7 +140,6 @@ export function CheckoutPage({
     }
 
     setPlacing(true)
-    const couponCode = sessionStorage.getItem('applied_coupon') || undefined
     const orderData = {
       items: cart,
       customerName: name,
@@ -151,7 +150,6 @@ export function CheckoutPage({
       pincode,
       customerType,
       paymentMethod: paymentMode,
-      couponCode,
       gstin: gstin || undefined,
     }
 
@@ -180,7 +178,6 @@ export function CheckoutPage({
       const userOrdersKey = `abm_orders_${currentUser.id || currentUser.email}`
       const existingUserOrders: ApiOrder[] = JSON.parse(localStorage.getItem(userOrdersKey) || '[]')
       localStorage.setItem(userOrdersKey, JSON.stringify([order, ...existingUserOrders]))
-      sessionStorage.removeItem('applied_coupon')
 
       onClearCart()
       navigate(`/invoice/${localId}`)

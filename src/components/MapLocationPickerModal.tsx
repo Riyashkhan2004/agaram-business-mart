@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { MapPin, Navigation, X, Check, Search, Home, Briefcase, GraduationCap, Store } from 'lucide-react'
+import { API_URL } from '../api'
 
 // Fix default Leaflet icon paths in Vite
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -40,6 +41,9 @@ export function MapLocationPickerModal({
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<L.Map | null>(null)
   const markerRef = useRef<L.Marker | null>(null)
+  const geocodeTimerRef = useRef<number | null>(null)
+  const lookupSequenceRef = useRef(0)
+  const addressCacheRef = useRef(new Map<string, { address: string; city: string; pincode: string }>())
 
   const [coords, setCoords] = useState<[number, number]>([11.7480, 79.7714])
   const [addressLine, setAddressLine] = useState('Main Road, Cuddalore')
@@ -48,6 +52,8 @@ export function MapLocationPickerModal({
   const [addressType, setAddressType] = useState<'home' | 'work' | 'school' | 'shop'>('home')
   const [searchQuery, setSearchQuery] = useState('')
   const [locating, setLocating] = useState(false)
+  const [addressLoading, setAddressLoading] = useState(false)
+  const [locationError, setLocationError] = useState('')
 
   // Initialize or update Leaflet map
   useEffect(() => {
@@ -110,6 +116,7 @@ export function MapLocationPickerModal({
   // Clean up on unmount
   useEffect(() => {
     return () => {
+      if (geocodeTimerRef.current !== null) window.clearTimeout(geocodeTimerRef.current)
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove()
         mapInstanceRef.current = null
@@ -118,24 +125,45 @@ export function MapLocationPickerModal({
   }, [])
 
   const updateLocationText = (lat: number, lng: number) => {
-    // Find closest preset or generate realistic address
-    let closest = PRESET_LOCATIONS[0]
-    let minD = Infinity
-    for (const p of PRESET_LOCATIONS) {
-      const d = Math.hypot(p.lat - lat, p.lng - lng)
-      if (d < minD) {
-        minD = d
-        closest = p
+    const sequence = ++lookupSequenceRef.current
+    const key = `${lat.toFixed(5)},${lng.toFixed(5)}`
+    const cached = addressCacheRef.current.get(key)
+    setLocationError('')
+    if (cached) {
+      setAddressLine(cached.address)
+      setCity(cached.city)
+      setPincode(cached.pincode)
+      setAddressLoading(false)
+      return
+    }
+    setAddressLine(`GPS pin ${lat.toFixed(5)}, ${lng.toFixed(5)}`)
+    setCity('')
+    setPincode('')
+    setAddressLoading(true)
+    if (geocodeTimerRef.current !== null) window.clearTimeout(geocodeTimerRef.current)
+    geocodeTimerRef.current = window.setTimeout(async () => {
+      try {
+        const query = new URLSearchParams({ lat: String(lat), lon: String(lng) })
+        const response = await fetch(`${API_URL}/api/location/reverse?${query}`, { signal: AbortSignal.timeout(12000), cache: 'no-store' })
+        const result = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(result.error || 'Address lookup is temporarily unavailable.')
+        if (sequence !== lookupSequenceRef.current) return
+        const resolved = {
+          address: result.address || result.displayAddress || `GPS pin ${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+          city: result.city || '',
+          pincode: result.pincode || '',
+        }
+        addressCacheRef.current.set(key, resolved)
+        setAddressLine(resolved.address)
+        setCity(resolved.city)
+        setPincode(resolved.pincode)
+        if (!resolved.pincode) setLocationError('The map could not find a PIN code for this address. Enter the delivery PIN below.')
+      } catch (error) {
+        if (sequence === lookupSequenceRef.current) setLocationError(error instanceof Error ? `${error.message} Enter the street address and PIN code below.` : 'Address lookup failed. Enter the street address and PIN code below.')
+      } finally {
+        if (sequence === lookupSequenceRef.current) setAddressLoading(false)
       }
-    }
-
-    if (minD < 0.05) {
-      setAddressLine(closest.name)
-      setCity(closest.city)
-      setPincode(closest.pincode)
-    } else {
-      setAddressLine(`Selected Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`)
-    }
+    }, 350)
   }
 
   const handleUseCurrentLocation = () => {
@@ -144,6 +172,7 @@ export function MapLocationPickerModal({
       return
     }
     setLocating(true)
+    setLocationError('')
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLocating(false)
@@ -155,11 +184,11 @@ export function MapLocationPickerModal({
         }
         updateLocationText(pos.coords.latitude, pos.coords.longitude)
       },
-      (err) => {
+      () => {
         setLocating(false)
-        alert('Could not detect exact GPS. Using nearest Agaram Station Hub.')
+        setLocationError('Could not read your GPS location. Allow location access in your browser and try again.')
       },
-      { timeout: 8000 }
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
     )
   }
 
@@ -169,6 +198,8 @@ export function MapLocationPickerModal({
     setAddressLine(preset.name)
     setCity(preset.city)
     setPincode(preset.pincode)
+    setLocationError('')
+    setAddressLoading(false)
     setSearchQuery('')
     if (mapInstanceRef.current && markerRef.current) {
       mapInstanceRef.current.setView(newCoords, 15)
@@ -177,6 +208,10 @@ export function MapLocationPickerModal({
   }
 
   const handleConfirm = () => {
+    if (!addressLine.trim() || !city.trim() || !/^\d{6}$/.test(pincode)) {
+      setLocationError('Enter your street address, city and valid 6-digit PIN code to confirm.')
+      return
+    }
     onSelectAddress({
       address: addressLine,
       city,
@@ -274,15 +309,23 @@ export function MapLocationPickerModal({
 
         {/* Address Fields & Tag Selection */}
         <div style={{ padding: '14px 16px', background: '#fff', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-            <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'var(--primary-light)', color: 'var(--primary)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-              <MapPin size={18} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: '13.5px', fontWeight: 800, color: 'var(--text-main)' }}>{addressLine}</div>
-              <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>{city}, Tamil Nadu — PIN: {pincode}</div>
-            </div>
+          <label style={{ display: 'grid', gap: '5px', fontSize: '11px', fontWeight: 800, color: 'var(--text-main)' }}>
+            Street address / landmark
+            <input value={addressLine} onChange={event => setAddressLine(event.target.value)} placeholder="House, street, area or landmark" className="pdp-pincode-input" style={{ height: '40px', fontSize: '12px' }} />
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: '8px' }}>
+            <label style={{ display: 'grid', gap: '5px', fontSize: '11px', fontWeight: 800, color: 'var(--text-main)' }}>
+              City / town
+              <input value={city} onChange={event => setCity(event.target.value)} placeholder="City" className="pdp-pincode-input" style={{ height: '40px', fontSize: '12px' }} />
+            </label>
+            <label style={{ display: 'grid', gap: '5px', fontSize: '11px', fontWeight: 800, color: 'var(--text-main)' }}>
+              PIN code
+              <input value={pincode} onChange={event => setPincode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6 digits" inputMode="numeric" maxLength={6} className="pdp-pincode-input" style={{ height: '40px', fontSize: '12px' }} />
+            </label>
           </div>
+          {addressLoading && <div role="status" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Looking up the street address…</div>}
+          {locationError && <div role="status" style={{ padding: '9px 11px', borderRadius: '9px', background: '#fff7ed', color: '#9a3412', fontSize: '11px', lineHeight: 1.45 }}>{locationError}</div>}
+          <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Map and address data © OpenStreetMap contributors. GPS coordinates are shared to find the address when you use GPS or move the pin.</div>
 
           {/* Address Tag Selector */}
           <div>

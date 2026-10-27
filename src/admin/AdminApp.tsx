@@ -44,6 +44,9 @@ import {
   deleteProduct,
   fetchAdminOrders,
   fetchAdminUsers,
+  setCustomerCoins,
+  updateAdminUser,
+  deleteAdminUser,
   fetchAdminStats,
   updateOrderStatus,
   updateOrderDetails,
@@ -68,10 +71,10 @@ function downloadOrdersCsv(orders: ApiOrder[]) {
     const safe = /^[\s]*[=+\-@]/.test(raw) ? `'${raw}` : raw
     return `"${safe.replace(/"/g, '""')}"`
   }
-  const header = ['Order ID', 'Date', 'Customer', 'Email', 'Phone', 'Address', 'City', 'Pincode', 'GSTIN', 'Items', 'Subtotal', 'Coupon', 'Discount', 'Delivery fee', 'Tax', 'Total', 'Status', 'Payment method', 'Payment status', 'Courier', 'Tracking number', 'Tracking URL', 'Admin notes']
+  const header = ['Order ID', 'Date', 'Customer', 'Email', 'Phone', 'Address', 'City', 'Pincode', 'GSTIN', 'Items', 'Subtotal', 'Discount', 'Delivery fee', 'Tax', 'Total', 'Status', 'Payment method', 'Payment status', 'Courier', 'Tracking number', 'Tracking URL', 'Admin notes']
   const rows = orders.map(order => [
     order.id, order.date, order.customerName, order.email, order.phone, order.address, order.city, order.pincode, order.gstin,
-    order.items.map(item => `${item.name || item.sku || item.productId} x ${item.quantity}`).join('; '), order.subtotal, order.couponCode, order.discount, order.deliveryFee, order.tax, order.total,
+    order.items.map(item => `${item.name || item.sku || item.productId} x ${item.quantity}`).join('; '), order.subtotal, order.discount, order.deliveryFee, order.tax, order.total,
     order.status, order.paymentMethod, order.paymentStatus, order.shippingProvider, order.trackingNumber, order.trackingUrl, order.adminNotes,
   ])
   const csv = [header, ...rows].map(row => row.map(escape).join(',')).join('\r\n')
@@ -546,6 +549,53 @@ export function AdminApp() {
     } catch (err: any) {
       alert(`Error updating order status: ${err.message}`)
       refreshAllData()
+    }
+  }
+
+  const handleSetCustomerCoins = async (user: ApiUser) => {
+    const next = window.prompt(`Set ${user.name}'s Agaram coin balance`, String(user.coin_balance ?? 0))
+    if (next === null) return
+    if (!/^\d+$/.test(next.trim()) || Number(next) > 1_000_000_000) {
+      setStatusMessage('Enter a whole-number balance between 0 and 1,000,000,000.')
+      return
+    }
+    const reason = window.prompt('Reason for this admin adjustment (optional)', 'Customer support adjustment') || undefined
+    try {
+      const updated = await setCustomerCoins(user.id, Number(next), reason)
+      setUsers(previous => previous.map(row => row.id === user.id ? { ...row, coin_balance: updated.coinBalance } : row))
+      setStatusMessage(`${user.name}'s balance is now ${updated.coinBalance} coins.`)
+      window.setTimeout(() => setStatusMessage(''), 4000)
+    } catch (error) {
+      setStatusMessage(`Could not update coins: ${error instanceof Error ? error.message : 'Please try again.'}`)
+    }
+  }
+
+  const handleEditCustomer = async (user: ApiUser) => {
+    const name = window.prompt('Customer name', user.name)
+    if (name === null) return
+    const email = window.prompt('Customer email (leave blank if none)', user.email || '')
+    if (email === null) return
+    const phone = window.prompt('Customer phone (leave blank if none)', user.phone || '')
+    if (phone === null) return
+    try {
+      const updated = await updateAdminUser(user.id, { name: name.trim(), email: email.trim(), phone: phone.trim() })
+      setUsers(previous => previous.map(row => row.id === user.id ? { ...row, ...updated } : row))
+      setStatusMessage(`Updated ${updated.name}'s customer record.`)
+      window.setTimeout(() => setStatusMessage(''), 4000)
+    } catch (error) {
+      setStatusMessage(`Could not update customer: ${error instanceof Error ? error.message : 'Please try again.'}`)
+    }
+  }
+
+  const handleDeleteCustomer = async (user: ApiUser) => {
+    if (!window.confirm(`Remove ${user.name}'s account? Their login and saved addresses will be removed, and order history will be anonymized.`)) return
+    try {
+      await deleteAdminUser(user.id)
+      setUsers(previous => previous.filter(row => row.id !== user.id))
+      setStatusMessage(`Removed ${user.name}'s customer account.`)
+      window.setTimeout(() => setStatusMessage(''), 4000)
+    } catch (error) {
+      setStatusMessage(`Could not remove customer: ${error instanceof Error ? error.message : 'Please try again.'}`)
     }
   }
 
@@ -1372,8 +1422,11 @@ export function AdminApp() {
                       <th>Customer Name</th>
                       <th>Customer ID</th>
                       <th>Email Address</th>
+                      <th>Phone</th>
+                      <th>Coins</th>
                       <th>User Role</th>
                       <th>Registered On</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1382,6 +1435,8 @@ export function AdminApp() {
                         <td style={{ fontWeight: 800 }}>{u.name}</td>
                         <td><code style={{ fontSize: '10px', color: 'var(--admin-text-soft)' }}>{u.id}</code></td>
                         <td style={{ color: 'var(--admin-text-soft)' }}>{u.email}</td>
+                        <td style={{ color: 'var(--admin-text-soft)' }}>{u.phone || '—'}</td>
+                        <td><button type="button" className="admin-btn admin-btn-secondary" onClick={() => handleSetCustomerCoins(u)} title="Set this customer's coin balance" style={{ padding: '5px 8px', fontSize: 11 }}>🪙 {Number(u.coin_balance || 0)} · Edit</button></td>
                         <td>
                           <span
                             style={{
@@ -1398,6 +1453,12 @@ export function AdminApp() {
                         </td>
                         <td style={{ fontSize: '11.5px', color: 'var(--admin-text-soft)' }}>
                           {new Date(u.createdAt || u.created_at || Date.now()).toLocaleDateString()}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button type="button" className="admin-btn admin-btn-secondary" onClick={() => handleEditCustomer(u)} title={`Edit ${u.name}`} style={{ minHeight: 34, padding: '5px 8px', fontSize: 11 }}><Edit3 size={13} /> Edit</button>
+                            <button type="button" className="admin-btn admin-btn-secondary" onClick={() => handleDeleteCustomer(u)} title={`Delete ${u.name}`} style={{ minHeight: 34, padding: '5px 8px', fontSize: 11, color: '#ef4444' }}><Trash2 size={13} /> Delete</button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -2062,6 +2123,7 @@ export function AdminApp() {
                           fontSize: '12.5px'
                         }}
                       >
+                        {(it.image || prod?.image) && <img src={it.image || prod?.image} alt="" loading="lazy" style={{ width: 48, height: 48, objectFit: 'contain', borderRadius: 6, marginRight: 10, background: '#fff', flex: '0 0 auto' }} />}
                         <div>
                           <b>{it.name || prod?.name || `Product #${it.productId}`}</b>
                           <div style={{ fontSize: '11px', color: 'var(--admin-text-soft)' }}>{it.sku && `SKU: ${it.sku} · `}Qty: {it.quantity} · Unit price: {money(it.price ?? prod?.price ?? 0)} · GST {it.gst ?? 0}%{it.discount ? ` · Discount: ${money(it.discount)}` : ''}</div>
@@ -2074,7 +2136,7 @@ export function AdminApp() {
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--admin-line)', paddingTop: '14px', marginTop: '10px' }}>
-                <div><div style={{ fontSize: '12px' }}>Subtotal {money(viewingOrder.subtotal)}{viewingOrder.couponCode ? ` · ${viewingOrder.couponCode}` : ''} · Discount {money(viewingOrder.discount)} · Delivery {money(viewingOrder.deliveryFee || 0)} · GST {money(viewingOrder.tax)}</div><b style={{ fontSize: '16px' }}>Grand Total:</b></div>
+                <div><div style={{ fontSize: '12px' }}>Subtotal {money(viewingOrder.subtotal)} · Discount {money(viewingOrder.discount)} · Delivery {money(viewingOrder.deliveryFee || 0)} · GST {money(viewingOrder.tax)}</div><b style={{ fontSize: '16px' }}>Grand Total:</b></div>
                 <span style={{ fontSize: '22px', fontWeight: 900, color: 'var(--admin-primary)' }}>{money(viewingOrder.total)}</span>
               </div>
               {viewingOrder.customerNotes && <p style={{ fontSize: '12px', marginTop: '12px' }}><b>Customer note:</b> {viewingOrder.customerNotes}</p>}

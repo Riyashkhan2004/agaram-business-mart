@@ -2,11 +2,11 @@
 
 /* ==========================================================================
    AGARAM STATIONERY MART — GLASSMORPHISM & MOBILE RESPONSIVE DESIGN SYSTEM
-   Inspired by Scooboo (Aesthetic Stationery) + Flipkart & Amazon (E-Commerce)
+   Agaram stationery storefront with a warm, accessible mobile-first interface
    ========================================================================== */
 
 :root {
-  /* Default Theme: Scooboo Coral & Warm Cream Glassmorphism */
+  /* Default Theme: Agaram Coral & Warm Cream Glassmorphism */
   --primary: #e03a1f;
   --primary-hover: #c42b14;
   --primary-light: rgba(224, 58, 31, 0.1);
@@ -73,7 +73,7 @@
   --shadow-float: 0 12px 30px rgba(244, 63, 94, 0.22);
 }
 
-/* Theme: Flipkart Electric Blue & Amber */
+/* Theme: Agaram Electric Blue & Amber */
 [data-theme='flipkart'] {
   --primary: #2874f0;
   --primary-hover: #175cd3;
@@ -970,7 +970,7 @@ img {
 }
 
 /* ==========================================================================
-   FLIPKART / AMAZON DEALS STRIP (Glassmorphism)
+   STORE DEALS STRIP (Glassmorphism)
    ========================================================================== */
 .deals-strip {
   background: linear-gradient(90deg, rgba(255, 244, 232, 0.85) 0%, rgba(255, 251, 245, 0.75) 100%);
@@ -2326,7 +2326,7 @@ img {
 }
 
 /* ==========================================================================
-   IMAGE 1 & IMAGE 2: TWO-PANE CATEGORY BROWSER (Blinkit / Scooboo Style)
+   TWO-PANE CATEGORY BROWSER
    ========================================================================== */
 .category-split-layout {
   display: grid;
@@ -3309,33 +3309,6 @@ html, body {
     grid-template-columns: 1fr !important;
     gap: 12px !important;
   }
-}
-
-/* ==========================================================================
-   DRAWER 1-CLICK PROMO COUPON CHIPS
-   ========================================================================== */
-.drawer-coupon-chip {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  background: #ffffff;
-  border: 1px dashed var(--primary);
-  border-radius: 8px;
-  padding: 6px 10px;
-  cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
-  transition: all 0.16s ease;
-}
-
-.drawer-coupon-chip:hover {
-  background: var(--primary-light);
-  border-style: solid;
-}
-
-.drawer-coupon-chip:active {
-  transform: scale(0.95);
 }
 
 /* Badge Bounce Animation */
@@ -4324,4 +4297,59 @@ html, body {
 
 @media (prefers-reduced-motion: reduce) {
   .wholesale-light-row span { animation: none; }
+}
+/* Branded connection states and recoverable app-level error screen. */
+.abm-experience-screen {
+  position: fixed; inset: 0; z-index: 99999; overflow: hidden; display: grid; place-items: center;
+  padding: 24px; color: #f8fafc; background: #07111e;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.abm-experience-screen::before {
+  content: ""; position: absolute; inset: 0; opacity: .16; pointer-events: none;
+  background-image: linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px);
+  background-size: 48px 48px; mask-image: radial-gradient(ellipse at center, black, transparent 75%);
+}
+.abm-experience-orb { position: absolute; width: 360px; height: 360px; border-radius: 50%; filter: blur(100px); opacity: .42; pointer-events: none; }
+.abm-experience-orb-a { top: -170px; left: -110px; background: #f05a35; }
+.abm-experience-orb-b { right: -160px; bottom: -200px; background: #286cf6; }
+.abm-experience-card {
+  position: relative; width: min(100%, 440px); padding: clamp(28px, 7vw, 48px); border: 1px solid rgba(255,255,255,.14);
+  border-radius: 28px; background: linear-gradient(145deg, rgba(20,34,52,.92), rgba(10,19,32,.9));
+  box-shadow: 0 30px 100px rgba(0,0,0,.45); backdrop-filter: blur(18px); text-align: center;
+}
+.abm-experience-mark { display: grid; place-items: center; width: 56px; height: 56px; margin: 0 auto 18px; border-radius: 18px; color: #fff; background: linear-gradient(135deg,#f15a36,#f7a33c); font-size: 30px; font-weight: 900; box-shadow: 0 10px 30px rgba(240,90,53,.28); }
+.abm-experience-mark-loading { animation: abm-mark-pulse 1.5s ease-in-out infinite; }
+.abm-experience-eyebrow { color: #a7bad1; font-size: 10px; letter-spacing: .2em; font-weight: 800; }
+.abm-experience-card h1 { margin: 14px 0 10px; color: #fff; font-size: clamp(25px, 6vw, 34px); line-height: 1.1; letter-spacing: -.04em; }
+.abm-experience-card p { margin: 0 auto 24px; max-width: 330px; color: #a9b8ca; font-size: 14px; line-height: 1.7; }
+.abm-experience-card small { display: block; margin-top: 16px; color: #71839a; font-size: 11px; }
+.abm-experience-progress { width: min(100%, 245px); height: 4px; margin: 25px auto 0; overflow: hidden; border-radius: 99px; background: rgba(255,255,255,.11); }
+.abm-experience-progress span { display: block; width: 42%; height: 100%; border-radius: inherit; background: linear-gradient(90deg,#f15a36,#ffca73); animation: abm-progress 1.35s ease-in-out infinite; }
+.abm-experience-status { display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px; border: 1px solid rgba(251,191,36,.22); border-radius: 99px; color: #fbd38d; background: rgba(146,91,15,.16); font-size: 11px; font-weight: 800; }
+.abm-experience-status span { width: 7px; height: 7px; border-radius: 50%; background: #fbbf24; box-shadow: 0 0 12px #fbbf24; }
+.abm-experience-primary, .abm-experience-secondary { width: 100%; min-height: 48px; border-radius: 13px; cursor: pointer; font: inherit; font-weight: 800; }
+.abm-experience-primary { border: 0; color: #151c26; background: linear-gradient(100deg,#ffc975,#ff9e62); box-shadow: 0 8px 26px rgba(243,146,76,.18); }
+.abm-experience-primary span { margin-left: 8px; font-size: 17px; }
+.abm-experience-secondary { margin-top: 9px; border: 1px solid rgba(255,255,255,.15); color: #d9e4ef; background: rgba(255,255,255,.04); }
+@keyframes abm-progress { 0% { transform: translateX(-110%); } 100% { transform: translateX(260%); } }
+@keyframes abm-mark-pulse { 50% { transform: translateY(-4px) scale(1.04); box-shadow: 0 14px 36px rgba(240,90,53,.46); } }
+@media (prefers-reduced-motion: reduce) { .abm-experience-mark-loading, .abm-experience-progress span { animation: none; } }
+
+@media (max-width: 767px) {
+  .site-footer { display: none !important; }
+  .store-shell { padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px)); }
+  .instamart-product-card { min-width: 0; overflow: hidden; padding: 8px !important; border-radius: 15px !important; }
+  .instamart-card-media, .instamart-card-info, .instamart-card-price-row, .instamart-card-price-wrap, .instamart-card-action { min-width: 0; }
+  .instamart-card-media { margin-bottom: 6px !important; }
+  .instamart-card-image-link { height: clamp(86px, 27vw, 145px) !important; border-radius: 11px !important; }
+  .instamart-card-brand { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 9px !important; }
+  .instamart-card-title { font-size: 11.5px !important; line-height: 1.25 !important; min-height: 29px !important; }
+  .instamart-card-price-row { gap: 3px; align-items: center; }
+  .instamart-card-price-wrap { flex: 1 1 auto; overflow: hidden; }
+  .instamart-card-price { font-size: clamp(10px, 3.2vw, 13px) !important; white-space: nowrap; letter-spacing: -.03em; }
+  .instamart-card-action { flex: 0 0 auto; }
+  .instamart-card-add-button { min-width: 42px; max-width: 48px; padding: 5px 3px !important; font-size: 9.5px !important; line-height: 1.1; white-space: nowrap; border-radius: 8px !important; }
+  .instamart-card-stepper { max-width: 52px; }
+  .instamart-card-stepper button { width: 18px !important; height: 27px !important; }
+  .instamart-card-stepper span { min-width: 13px !important; font-size: 10px !important; }
 }

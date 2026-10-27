@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  User, Package, Ticket, Zap, Sparkles, CreditCard,
+  User, Package, Zap, Sparkles, CreditCard,
   MapPin, Heart, Gift, Bell, LogOut, ChevronRight
 } from 'lucide-react'
 
@@ -22,7 +22,7 @@ export function ProfileDropdown({
   onLogout,
   totalOrdersCount = 0,
   wishlistCount = 0,
-  coins = 50,
+  coins = 0,
 }: ProfileDropdownProps) {
   const dropdownRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
@@ -59,13 +59,6 @@ export function ProfileDropdown({
       badge: totalOrdersCount > 0 ? `${totalOrdersCount}` : undefined,
       sub: 'Track, view invoice & reorder',
       path: '/account?tab=orders',
-    },
-    {
-      icon: <Ticket size={18} color="#10b981" />,
-      label: 'Coupons',
-      badge: '3 Active',
-      sub: 'Bulk discount vouchers & codes',
-      path: '/account?tab=coupons',
     },
     {
       icon: <Zap size={18} color="#f59e0b" />,
