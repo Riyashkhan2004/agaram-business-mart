@@ -801,8 +801,9 @@ app.patch('/api/admin/orders/:id/status', authorize('admin'), async (req, res) =
       return res.status(error.status || 500).json({ error: error.status ? error.message : 'Could not cancel this order' })
     }
   }
-  const client = await pool.connect()
+  let client
   try {
+    client = await pool.connect()
     await client.query('BEGIN')
     const existing = await client.query('SELECT id,status FROM orders WHERE order_no=$1 OR id::text=$1 FOR UPDATE', [req.params.id])
     if (!existing.rowCount) {
@@ -814,14 +815,14 @@ app.patch('/api/admin/orders/:id/status', authorize('admin'), async (req, res) =
       return res.status(409).json({ error: 'A cancelled order cannot be reopened.' })
     }
     const result = await client.query(`UPDATE orders SET status=$1, updated_at=NOW(),
-      status_history=status_history || jsonb_build_array(jsonb_build_object('status',$1::text,'at',NOW(),'note',$3::text))
+      status_history=COALESCE(status_history,'[]'::jsonb) || jsonb_build_array(jsonb_build_object('status',$1::text,'at',NOW(),'note',$3::text))
       WHERE id=$2 RETURNING *`, [status, existing.rows[0].id, orderStatusNotes[status] || 'Order status updated'])
     await client.query('COMMIT')
     return res.json({ success: true, order: result.rows[0] })
   } catch (error) {
-    await client.query('ROLLBACK').catch(() => {})
+    await client?.query('ROLLBACK').catch(() => {})
     throw error
-  } finally { client.release() }
+  } finally { client?.release() }
 })
 
 app.patch('/api/admin/orders/:id/details', authorize('admin'), async (req, res) => {
