@@ -814,8 +814,8 @@ app.patch('/api/admin/orders/:id/status', authorize('admin'), async (req, res) =
       await client.query('ROLLBACK')
       return res.status(409).json({ error: 'A cancelled order cannot be reopened.' })
     }
-    const result = await client.query(`UPDATE orders SET status=$1, updated_at=NOW(),
-      status_history=COALESCE(status_history,'[]'::jsonb) || jsonb_build_array(jsonb_build_object('status',$1::text,'at',NOW(),'note',$3::text))
+    const result = await client.query(`UPDATE orders SET status=$1::varchar, updated_at=NOW(),
+      status_history=COALESCE(status_history,'[]'::jsonb) || jsonb_build_array(jsonb_build_object('status',$1::varchar,'at',NOW(),'note',$3::text))
       WHERE id=$2 RETURNING *`, [status, existing.rows[0].id, orderStatusNotes[status] || 'Order status updated'])
     await client.query('COMMIT')
     return res.json({ success: true, order: result.rows[0] })
