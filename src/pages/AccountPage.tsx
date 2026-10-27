@@ -22,7 +22,11 @@ import {
   AlertCircle,
   Copy,
   Check,
-  X
+  X,
+  ArrowLeft,
+  Headphones,
+  Sparkles,
+  WalletCards
 } from 'lucide-react'
 import { fetchUserOrders, fetchUserAddresses, saveUserAddressesRemote, customerLogin, signUp, logout, cancelCustomerOrder, ApiOrder } from '../api'
 import { Product, Language, t, money, unitPrice, CustomerType } from '../data/products'
@@ -44,6 +48,7 @@ interface AccountPageProps {
 }
 
 type TabKey =
+  | 'overview'
   | 'profile'
   | 'orders'
   | 'coupons'
@@ -111,7 +116,16 @@ export const AccountPage: React.FC<AccountPageProps> = ({
 }) => {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const currentTab = (searchParams.get('tab') as TabKey) || 'orders'
+  const requestedTab = searchParams.get('tab') as TabKey | null
+  const currentTab = requestedTab && requestedTab !== 'overview' ? requestedTab : 'orders'
+  const [isPhoneViewport, setIsPhoneViewport] = useState(() => window.matchMedia('(max-width: 767px)').matches)
+  const showingMobileOverview = (!requestedTab || requestedTab === 'overview') && isPhoneViewport
+
+  useEffect(() => {
+    const updateViewport = () => setIsPhoneViewport(window.matchMedia('(max-width: 767px)').matches)
+    window.addEventListener('resize', updateViewport)
+    return () => window.removeEventListener('resize', updateViewport)
+  }, [])
 
   // Auth form states
   const [isSignUp, setIsSignUp] = useState(false)
@@ -253,7 +267,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({
   }, [currentUser?.id, savedAddressExpiry])
 
   const setTab = (tab: TabKey) => {
-    setSearchParams({ tab })
+    setSearchParams(tab === 'overview' ? {} : { tab })
   }
 
   const handleAuth = async (e: FormEvent) => {
@@ -649,14 +663,15 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                   gap: '4px'
                 }}
               >
-                ★ Agaram Plus Member
+                {customerType === 'wholesale' ? 'Business customer' : 'Agaram customer'}
               </span>
+              <span className="account-profile-coin-pill"><Sparkles size={12} /> {coinBalance} coins</span>
             </div>
             <div className="account-profile-meta" style={{ fontSize: '13px', color: '#64748b', marginTop: '3px' }}>
               {currentUser.email} {currentUser.phone ? `• +91 ${currentUser.phone}` : ''}
             </div>
             <div className="account-profile-account-id" style={{ fontSize: '11px', color: '#059669', fontWeight: 700, marginTop: '2px' }}>
-              Account ID: {currentUser.id || 'AGM-USR-8821'} • Isolated Profile Active
+              Your personal Agaram account
             </div>
           </div>
         </div>
@@ -760,8 +775,106 @@ export const AccountPage: React.FC<AccountPageProps> = ({
 
         {/* Content Area */}
         <div className="account-content" style={{ minWidth: 0, flex: 1 }}>
+          {!showingMobileOverview && (
+            <button type="button" className="account-mobile-back" onClick={() => setTab('overview')}>
+              <ArrowLeft size={17} /> <span>My account</span>
+            </button>
+          )}
+
+          {showingMobileOverview && (
+            <div className="account-mobile-dashboard">
+              <div className="account-mobile-quick-grid" aria-label="Account shortcuts">
+                {[
+                  { key: 'orders' as TabKey, label: 'My orders', detail: `${orders.length} ${orders.length === 1 ? 'order' : 'orders'}`, icon: <Package size={20} />, tone: 'coral' },
+                  { key: 'wishlist' as TabKey, label: 'Wishlist', detail: `${wishlist.length} saved`, icon: <Heart size={20} />, tone: 'rose' },
+                  { key: 'coupons' as TabKey, label: 'Coupons', detail: 'Deals for you', icon: <Tag size={20} />, tone: 'amber' },
+                  { key: 'help' as const, label: 'Help center', detail: 'We’re ready to help', icon: <Headphones size={20} />, tone: 'green' },
+                ].map(action => (
+                  action.key === 'help' ? (
+                    <Link to="/contact" className="account-mobile-quick-card" key={action.key}>
+                      <span className={`account-mobile-quick-icon ${action.tone}`}>{action.icon}</span>
+                      <span className="account-mobile-quick-copy"><b>{action.label}</b><small>{action.detail}</small></span>
+                      <ChevronRight size={16} aria-hidden="true" />
+                    </Link>
+                  ) : (
+                    <button type="button" className="account-mobile-quick-card" key={action.key} onClick={() => setTab(action.key)}>
+                      <span className={`account-mobile-quick-icon ${action.tone}`}>{action.icon}</span>
+                      <span className="account-mobile-quick-copy"><b>{action.label}</b><small>{action.detail}</small></span>
+                      <ChevronRight size={16} aria-hidden="true" />
+                    </button>
+                  )
+                ))}
+              </div>
+
+              <section className="account-mobile-section">
+                <div className="account-mobile-section-heading">
+                  <div><span className="account-mobile-eyebrow">YOUR AGARAM ACTIVITY</span><h3>My activity</h3></div>
+                  {orders.length > 0 && <button type="button" className="account-mobile-text-action" onClick={() => setTab('orders')}>See all</button>}
+                </div>
+                {orders.length > 0 ? orders.slice(0, 2).map(order => (
+                    <button type="button" className="account-mobile-order-row" key={order.id} onClick={() => setTab('orders')}>
+                      <span className="account-mobile-order-icon"><Package size={18} /></span>
+                      <span className="account-mobile-order-copy"><b>Order #{order.id}</b><small>{order.items.length} items · {new Date(order.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</small></span>
+                      <span className={`account-mobile-order-status ${String(order.status || 'received').toLowerCase()}`}>{String(order.status || 'received').replace('_', ' ')}</span>
+                    </button>
+                  )) : (
+                    <div className="account-mobile-empty-activity">
+                      <span className="account-mobile-order-icon"><ShoppingBag size={18} /></span>
+                      <span><b>Your activity starts here</b><small>Orders and delivery updates will appear here.</small></span>
+                      <Link to="/" aria-label="Browse Agaram products"><ChevronRight size={18} /></Link>
+                    </div>
+                  )}
+              </section>
+
+              <section className="account-mobile-section">
+                <div className="account-mobile-section-heading"><div><span className="account-mobile-eyebrow">YOUR DETAILS</span><h3>Account settings</h3></div></div>
+                <div className="account-mobile-list-card">
+                  {[
+                    { key: 'profile' as TabKey, label: 'Personal information', detail: 'Name and contact details', icon: <User size={19} /> },
+                    { key: 'addresses' as TabKey, label: 'Saved addresses', detail: 'Delivery locations', icon: <MapPin size={19} /> },
+                    { key: 'wallet' as TabKey, label: 'Payments & wallet', detail: 'Cash on delivery and saved options', icon: <WalletCards size={19} /> },
+                    { key: 'notifications' as TabKey, label: 'Notifications', detail: 'Order and store updates', icon: <Bell size={19} /> },
+                  ].map((item, index) => (
+                    <button type="button" className="account-mobile-list-row" key={item.key} onClick={() => setTab(item.key)}>
+                      <span className="account-mobile-list-icon">{item.icon}</span>
+                      <span className="account-mobile-list-copy"><b>{item.label}</b><small>{item.detail}</small></span>
+                      <ChevronRight size={17} aria-hidden="true" />
+                      {index < 3 && <span className="account-mobile-list-divider" />}
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section className="account-mobile-section">
+                <div className="account-mobile-section-heading"><div><span className="account-mobile-eyebrow">GROW WITH AGARAM</span><h3>For your business</h3></div></div>
+                <Link to="/contact" className="account-mobile-business-row">
+                  <span className="account-mobile-list-icon"><ShoppingBag size={19} /></span>
+                  <span className="account-mobile-list-copy"><b>Bulk buying & GST support</b><small>Get help with business and institutional orders</small></span>
+                  <ChevronRight size={17} aria-hidden="true" />
+                </Link>
+              </section>
+
+              <section className="account-mobile-section">
+                <div className="account-mobile-section-heading"><div><span className="account-mobile-eyebrow">FEEDBACK & INFORMATION</span><h3>Help and information</h3></div></div>
+                <div className="account-mobile-list-card">
+                  <Link className="account-mobile-list-row account-mobile-link-row" to="/contact">
+                    <span className="account-mobile-list-icon"><Headphones size={19} /></span>
+                    <span className="account-mobile-list-copy"><b>Help & WhatsApp support</b><small>Talk to our customer team</small></span>
+                    <ChevronRight size={17} aria-hidden="true" />
+                    <span className="account-mobile-list-divider" />
+                  </Link>
+                  <Link className="account-mobile-list-row account-mobile-link-row" to="/about">
+                    <span className="account-mobile-list-icon"><ShieldCheck size={19} /></span>
+                    <span className="account-mobile-list-copy"><b>About Agaram</b><small>Our store, service and promise</small></span>
+                    <ChevronRight size={17} aria-hidden="true" />
+                  </Link>
+                </div>
+              </section>
+            </div>
+          )}
+
           {/* TAB: ORDERS */}
-          {currentTab === 'orders' && (
+          {currentTab === 'orders' && !showingMobileOverview && (
             <div>
               <div
                 style={{

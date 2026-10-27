@@ -3486,6 +3486,121 @@ html, body {
   }
 }
 
+.account-mobile-dashboard {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.account-mobile-eyebrow {
+  display: block;
+  color: #a64b35;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .12em;
+}
+
+.account-mobile-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.account-mobile-quick-card,
+.account-mobile-order-row,
+.account-mobile-list-row {
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.account-mobile-quick-card {
+  display: flex;
+  min-width: 0;
+  min-height: 84px;
+  align-items: center;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid #e9e7e4;
+  border-radius: 16px;
+  background: #fff;
+  color: #8a8580;
+  text-decoration: none;
+  box-shadow: 0 4px 12px rgba(30, 24, 20, .035);
+  transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+}
+
+.account-mobile-quick-card:hover { border-color: #e8b5a7; box-shadow: 0 8px 18px rgba(83, 39, 20, .08); transform: translateY(-1px); }
+.account-mobile-quick-card:active { transform: scale(.985); }
+
+.account-mobile-quick-icon,
+.account-mobile-order-icon,
+.account-mobile-list-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 13px;
+  background: #fff0eb;
+  color: #cf4e32;
+}
+
+.account-mobile-quick-icon.rose { background: #fff0f3; color: #d43f67; }
+.account-mobile-quick-icon.amber { background: #fff6df; color: #b97900; }
+.account-mobile-quick-icon.green { background: #eaf7ef; color: #26834b; }
+
+.account-mobile-quick-copy,
+.account-mobile-order-copy,
+.account-mobile-list-copy { display: block; flex: 1; min-width: 0; }
+.account-mobile-quick-copy b,
+.account-mobile-quick-copy small,
+.account-mobile-order-copy b,
+.account-mobile-order-copy small,
+.account-mobile-list-copy b,
+.account-mobile-list-copy small { display: block; }
+.account-mobile-quick-copy b { color: #282321; font-size: 13px; line-height: 1.25; }
+.account-mobile-quick-copy small { margin-top: 4px; color: #857d77; font-size: 11px; }
+
+.account-mobile-section { display: grid; gap: 10px; }
+.account-mobile-section-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; padding: 0 2px; }
+.account-mobile-section-heading h3 { margin: 3px 0 0; color: #211c19; font-size: 17px; line-height: 1.2; }
+.account-mobile-section-heading .account-mobile-eyebrow { font-size: 9px; }
+.account-mobile-text-action { min-height: 40px; padding: 0 8px; border: 0; background: transparent; color: #c34a31; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+
+.account-mobile-list-card { overflow: hidden; border: 1px solid #ebe8e4; border-radius: 17px; background: #fff; box-shadow: 0 4px 14px rgba(30, 24, 20, .035); }
+.account-mobile-list-row { position: relative; display: flex; width: 100%; min-height: 70px; align-items: center; gap: 12px; padding: 11px 14px; border: 0; background: #fff; color: #928b86; }
+.account-mobile-link-row { box-sizing: border-box; text-decoration: none; }
+.account-mobile-list-row:hover { background: #fffaf7; }
+.account-mobile-list-icon { width: 38px; height: 38px; border-radius: 12px; background: #f8f4f1; color: #5f534d; }
+.account-mobile-list-copy b { color: #282321; font-size: 13px; line-height: 1.3; }
+.account-mobile-list-copy small { margin-top: 3px; color: #867d77; font-size: 11px; line-height: 1.3; }
+.account-mobile-list-divider { position: absolute; right: 14px; bottom: 0; left: 64px; height: 1px; background: #f0eeeb; }
+
+.account-mobile-order-row { display: flex; width: 100%; min-height: 68px; align-items: center; gap: 11px; padding: 10px 12px; border: 1px solid #ebe8e4; border-radius: 15px; background: #fff; }
+.account-mobile-empty-activity,
+.account-mobile-business-row { display: flex; min-height: 68px; align-items: center; gap: 11px; padding: 10px 12px; border: 1px solid #ebe8e4; border-radius: 15px; background: #fff; color: #928b86; text-decoration: none; }
+.account-mobile-empty-activity > span:nth-child(2) { flex: 1; min-width: 0; }
+.account-mobile-empty-activity b { display: block; color: #282321; font-size: 12px; }
+.account-mobile-empty-activity small { display: block; margin-top: 4px; color: #817a75; font-size: 10px; }
+.account-mobile-business-row { box-shadow: 0 4px 14px rgba(30, 24, 20, .035); }
+.account-mobile-business-row:hover { background: #fffaf7; }
+.account-mobile-order-icon { width: 38px; height: 38px; border-radius: 12px; background: #eef4ff; color: #3565bd; }
+.account-mobile-order-copy b { overflow: hidden; color: #282321; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.account-mobile-order-copy small { margin-top: 4px; color: #817a75; font-size: 10px; }
+.account-mobile-order-status { max-width: 100px; padding: 6px 8px; border-radius: 999px; background: #f1f5f9; color: #475569; font-size: 9px; font-weight: 900; text-align: center; text-transform: capitalize; }
+.account-mobile-order-status.received,
+.account-mobile-order-status.confirmed { background: #fff7e6; color: #996400; }
+.account-mobile-order-status.packed,
+.account-mobile-order-status.shipped { background: #eaf2ff; color: #2455a4; }
+.account-mobile-order-status.delivered { background: #e9f7ee; color: #247542; }
+.account-mobile-order-status.cancelled { background: #fff0ef; color: #b53a31; }
+
+.account-profile-coin-pill { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border: 1px solid #f1d6a0; border-radius: 999px; background: #fff6dd; color: #946000; font-size: 10px; font-weight: 900; white-space: nowrap; }
+
+.account-mobile-back { display: none; }
+
 @media (prefers-reduced-motion: reduce) {
   .category-main-round-icon { transition: none; }
 }
@@ -4174,6 +4289,37 @@ html, body {
   .account-content * {
     max-width: 100%;
   }
+}
+
+@media (max-width: 767px) {
+  .account-page { padding-top: 10px !important; }
+  .account-profile-summary { padding: 14px !important; gap: 11px !important; margin-bottom: 14px !important; border-radius: 17px !important; }
+  .account-profile-identity { gap: 10px !important; }
+  .account-profile-avatar { flex-basis: 48px; width: 48px !important; min-width: 48px; height: 48px !important; min-height: 48px; font-size: 20px !important; }
+  .account-profile-heading h1 { font-size: 16px !important; }
+  .account-profile-heading > span { font-size: 9px !important; padding: 3px 7px !important; }
+  .account-profile-heading > .account-profile-coin-pill { padding: 4px 7px !important; border: 1px solid #f1d6a0 !important; background: #fff6dd !important; color: #946000 !important; font-size: 10px !important; }
+  .account-profile-meta { font-size: 11px !important; line-height: 1.45; }
+  .account-profile-account-id { display: none; }
+  .account-profile-actions { display: flex !important; justify-content: flex-end; }
+  .account-profile-actions > a { display: none !important; }
+  .account-profile-actions > button { min-height: 40px; width: auto; margin-left: auto; }
+  .account-layout-grid { display: block !important; }
+  .account-sidebar { display: none !important; }
+  .account-mobile-dashboard { gap: 14px; }
+  .account-mobile-section:nth-of-type(1) { order: 2; }
+  .account-mobile-section:nth-of-type(2) { order: 1; }
+  .account-mobile-section:nth-of-type(3) { order: 3; }
+  .account-mobile-section:nth-of-type(4) { order: 4; }
+  .account-mobile-quick-grid { gap: 8px; }
+  .account-mobile-quick-card { min-height: 74px; gap: 8px; padding: 10px 9px; border-radius: 14px; }
+  .account-mobile-quick-icon { width: 36px; height: 36px; border-radius: 11px; }
+  .account-mobile-quick-copy b { font-size: 12px; }
+  .account-mobile-quick-copy small { font-size: 10px; }
+  .account-mobile-section { gap: 8px; }
+  .account-mobile-section-heading h3 { font-size: 16px; }
+  .account-mobile-list-row { min-height: 66px; padding: 10px 11px; gap: 10px; }
+  .account-mobile-back { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; margin: 0 0 10px; padding: 0 10px; border: 0; border-radius: 10px; background: #f7f4f1; color: #584b45; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer; }
 }
 
 @media (prefers-reduced-motion: reduce) {
