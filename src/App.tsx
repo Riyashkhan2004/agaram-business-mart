@@ -61,7 +61,7 @@ export function numberToWords(num: number): string {
 
 export const t = {
   en: {
-    announcement: '✨ Get 10% OFF with code AESTHETIC10 | 🚀 Free Express Delivery on ₹1499+ | 📦 School & Office Bulk Pricing',
+    announcement: '🚚 Cash on Delivery | 📦 School & Office Bulk Pricing | ✨ Tiered savings on multi-item orders',
     offer: 'Offer',
     aboutUs: 'About Us',
     helpSupport: 'Help & Support',
@@ -98,7 +98,7 @@ export const t = {
     signOut: 'Sign Out',
   },
   ta: {
-    announcement: '✨ AESTHETIC10 கூப்பன் மூலம் 10% தள்ளுபடி பெறுங்கள் | 🚀 ₹1499+க்கு மேல் இலவச விரைவு விநியோகம் | 📦 பள்ளி & அலுவலக மொத்த விலை',
+    announcement: '🚚 பொருள் கிடைத்ததும் பணம் செலுத்துங்கள் | 📦 பள்ளி மற்றும் அலுவலக மொத்த விலை | ✨ பல பொருட்களுக்கு விலை சலுகை',
     offer: 'சலுகை',
     aboutUs: 'எங்களை பற்றி',
     helpSupport: 'உதவி & ஆதரவு',
@@ -482,7 +482,7 @@ export default function App() {
                   title="Change Color Theme"
                 >
                   <div className="theme-color-dot" />
-                  <span className="header-action-label" style={{ textTransform: 'capitalize' }}>{theme}</span>
+                  <span className="header-action-label">{{ scooboo: 'Agaram Coral', pastel: 'Pastel Kawaii', flipkart: 'Agaram Blue', matcha: 'Matcha Forest' }[theme]}</span>
                   <ChevronDown size={14} />
                 </button>
 
