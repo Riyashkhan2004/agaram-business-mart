@@ -83,6 +83,14 @@ function downloadOrdersCsv(orders: ApiOrder[]) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
+function toLocalDateTimeInput(value?: string) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset())
+  return date.toISOString().slice(0, 16)
+}
+
 type AdminTab = 'dashboard' | 'products' | 'storefront' | 'orders' | 'customers' | 'database'
 
 export function AdminApp() {
@@ -172,12 +180,12 @@ export function AdminApp() {
         if (error instanceof ApiError && error.status === 401 && localStorage.getItem('abm_admin_token')) {
           localStorage.removeItem('abm_admin_token')
           setAuth(false)
-          setLoginError('Your admin session belongs to the previous database. Sign in again to load orders from the connected Neon database.')
+          setLoginError('Your admin session belongs to the previous database. Sign in again to load orders from the connected PostgreSQL database.')
         }
       })
   }, [])
 
-  // Load all live data from Backend & Neon DB
+  // Load all live data from the backend and PostgreSQL.
   const refreshAllData = async () => {
     setLoading(true)
     setOrdersLoadError('')
@@ -203,7 +211,7 @@ export function AdminApp() {
       if (error instanceof ApiError && error.status === 401) {
         localStorage.removeItem('abm_admin_token')
         setAuth(false)
-        setLoginError('Your admin session belongs to the previous database. Sign in again to load orders from the connected Neon database.')
+        setLoginError('Your admin session belongs to the previous database. Sign in again to load orders from the connected PostgreSQL database.')
         setOrders([])
         setOrdersLoadError('Your admin session expired when the database connection changed. Sign in again and sync the live database.')
       } else {
@@ -257,6 +265,37 @@ export function AdminApp() {
     const refreshTimer = window.setInterval(() => refreshAllData(), 30_000)
     return () => window.clearInterval(refreshTimer)
   }, [auth])
+
+  useEffect(() => {
+    if (!auth || currentTab !== 'orders') return
+    let active = true
+    let refreshing = false
+    const refreshLiveOrders = async () => {
+      if (refreshing || document.visibilityState !== 'visible') return
+      refreshing = true
+      try {
+        const liveOrders = await fetchAdminOrders()
+        if (active) {
+          setOrders(liveOrders)
+          setOrdersLoadError('')
+        }
+      } catch (error) {
+        if (active && error instanceof ApiError && error.status === 401) {
+          localStorage.removeItem('abm_admin_token')
+          setAuth(false)
+        }
+      } finally {
+        refreshing = false
+      }
+    }
+    const timer = window.setInterval(refreshLiveOrders, 5_000)
+    window.addEventListener('focus', refreshLiveOrders)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refreshLiveOrders)
+    }
+  }, [auth, currentTab])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -314,7 +353,7 @@ export function AdminApp() {
     }
   }
 
-  // Handle Save / Add Product (Optimistic + Neon DB)
+  // Handle save/add product (optimistic update + PostgreSQL).
   const handleSaveProduct = async (p: Product, isCreate = false) => {
     const price = Math.max(0, Number.isFinite(Number(p.price)) ? Number(p.price) : 0)
     const mrp = Math.max(price, Number.isFinite(Number(p.mrp)) ? Number(p.mrp) : price)
@@ -479,7 +518,7 @@ export function AdminApp() {
     }
   }
 
-  // Handle Delete Product (Optimistic + Neon DB)
+  // Handle delete product (optimistic update + PostgreSQL).
   const handleDeleteProduct = async (id: number) => {
     if (!window.confirm(`Are you sure you want to delete Product #${id} from the live store?`)) return
     try {
@@ -496,7 +535,7 @@ export function AdminApp() {
     }
   }
 
-  // Handle Order Status Update (Optimistic + Neon DB)
+  // Handle order status update (optimistic update + PostgreSQL).
   const handleUpdateOrderStatus = async (orderId: string, status: string) => {
     setOrders(prev => prev.map(o => (o.id === orderId ? ({ ...o, status } as any) : o)))
     setStatusMessage(`Order #${orderId} marked as ${status.toUpperCase()}!`)
@@ -532,6 +571,9 @@ export function AdminApp() {
         shippingProvider: viewingOrder.shippingProvider,
         trackingNumber: viewingOrder.trackingNumber,
         trackingUrl: viewingOrder.trackingUrl,
+        deliveryDriverName: viewingOrder.deliveryDriverName,
+        deliveryDriverPhone: viewingOrder.deliveryDriverPhone,
+        estimatedDeliveryAt: viewingOrder.estimatedDeliveryAt,
         adminNotes: viewingOrder.adminNotes,
       })
       setViewingOrder(order)
@@ -607,7 +649,7 @@ export function AdminApp() {
           </div>
 
           <p style={{ fontSize: '12.5px', color: '#94a3b8', marginBottom: '20px' }}>
-            Sign in to manage live inventory, Neon PostgreSQL tables, customer orders, and store analytics.
+            Sign in to manage live inventory, PostgreSQL data, customer orders, and store analytics.
           </p>
 
           {loginError && (
@@ -659,7 +701,7 @@ export function AdminApp() {
           </form>
 
           <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #1e293b', fontSize: '11px', color: '#64748b', textAlign: 'center' }}>
-            Connected to Render API & Neon PostgreSQL Database
+            Connected to API & PostgreSQL Database
           </div>
         </div>
       </div>
@@ -796,7 +838,7 @@ export function AdminApp() {
             className={`admin-nav-item ${currentTab === 'database' ? 'active' : ''}`}
           >
             <Database size={18} />
-            <span>Neon DB Diagnostic</span>
+            <span>PostgreSQL Diagnostic</span>
           </button>
         </nav>
 
@@ -831,11 +873,11 @@ export function AdminApp() {
               {currentTab === 'storefront' && 'Storefront Categories & Images'}
               {currentTab === 'orders' && 'Real-time Customer Orders'}
               {currentTab === 'customers' && 'Registered Customer Directory'}
-              {currentTab === 'database' && 'Neon PostgreSQL Database Hub'}
+              {currentTab === 'database' && 'PostgreSQL Database Hub'}
             </h1>
           </div>
           <div className="admin-topbar-actions">
-            <button onClick={refreshAllData} className="admin-btn admin-btn-secondary" title="Refresh all data from Neon DB">
+            <button onClick={refreshAllData} className="admin-btn admin-btn-secondary" title="Refresh all data from PostgreSQL">
               <RefreshCw size={14} className={loading ? 'spin' : ''} />
               <span>{loading ? 'Syncing...' : 'Sync Live DB'}</span>
             </button>
@@ -1135,7 +1177,7 @@ export function AdminApp() {
                               onClick={() => setEditingProduct(p)}
                               className="admin-btn admin-btn-secondary"
                               style={{ padding: '6px 9px', fontSize: '11px' }}
-                              title="Edit in Neon DB"
+                              title="Edit in PostgreSQL"
                             >
                               <Edit3 size={13} />
                             </button>
@@ -1168,7 +1210,7 @@ export function AdminApp() {
                 {[
                   { label: 'All orders', value: orders.length, tone: '#60a5fa' },
                   { label: 'Needs attention', value: orders.filter(order => ['received', 'confirmed'].includes(order.status || 'received')).length, tone: '#fbbf24' },
-                  { label: 'In progress', value: orders.filter(order => ['packed', 'shipped'].includes(order.status || '')).length, tone: '#38bdf8' },
+                  { label: 'With Agaram drivers', value: orders.filter(order => order.status === 'shipped').length, tone: '#38bdf8' },
                   { label: 'Delivered', value: orders.filter(order => order.status === 'delivered').length, tone: '#34d399' },
                 ].map(metric => (
                   <div className="admin-orders-metric" key={metric.label}>
@@ -1186,6 +1228,7 @@ export function AdminApp() {
               <div className="admin-table-container">
               <div className="admin-table-header">
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', flex: 1 }}>
+                  <span role="status" style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', borderRadius: '999px', padding: '7px 10px', color: '#166534', background: '#dcfce7', fontSize: '11px', fontWeight: 800 }}><span aria-hidden="true" style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#16a34a', boxShadow: '0 0 0 3px #bbf7d0' }} />Live order sync · 5 sec</span>
                   <div className="admin-table-search">
                     <Search size={15} style={{ position: 'absolute', left: '12px', top: '10px', color: 'var(--admin-text-soft)' }} />
                     <input
@@ -1207,7 +1250,7 @@ export function AdminApp() {
                     <option value="received">Received</option>
                     <option value="confirmed">Confirmed</option>
                     <option value="packed">Packed</option>
-                    <option value="shipped">Shipped</option>
+                    <option value="shipped">Out for delivery</option>
                     <option value="delivered">Delivered</option>
                     <option value="cancelled">Cancelled</option>
                   </select>
@@ -1279,7 +1322,7 @@ export function AdminApp() {
                               <option value="received">Received</option>
                               <option value="confirmed">Confirmed</option>
                               <option value="packed">Packed</option>
-                              <option value="shipped">Shipped</option>
+                              <option value="shipped">Out for delivery</option>
                               <option value="delivered">Delivered</option>
                               <option value="cancelled">Cancelled</option>
                             </select>
@@ -1985,15 +2028,17 @@ export function AdminApp() {
                 <div style={{ background: 'var(--admin-bg)', padding: '12px', borderRadius: '8px' }}>
                   <b style={{ fontSize: '11px', textTransform: 'uppercase' }}>Payment</b>
                   <div style={{ fontSize: '12px', marginTop: '5px' }}>Method: {(viewingOrder.paymentMethod || 'cod').toUpperCase()}</div>
-                  <select className="admin-input" value={viewingOrder.paymentStatus || 'due_on_delivery'} onChange={event => setViewingOrder({ ...viewingOrder, paymentStatus: event.target.value as ApiOrder['paymentStatus'] })} style={{ marginTop: '7px', width: '100%' }}>
-                    <option value="pending">Payment pending</option><option value="paid">Paid</option><option value="failed">Failed</option><option value="due_on_delivery">Due on delivery</option><option value="refunded">Refunded</option>
+                  <select className="admin-input" value={viewingOrder.paymentStatus || 'due_on_delivery'} onChange={event => setViewingOrder({ ...viewingOrder, paymentStatus: event.target.value as ApiOrder['paymentStatus'] })} style={{ marginTop: '7px', width: '100%' }} aria-label="Cash collection status">
+                    <option value="due_on_delivery">Cash due at door</option><option value="paid">Cash collected</option>
                   </select>
                 </div>
                 <div style={{ background: 'var(--admin-bg)', padding: '12px', borderRadius: '8px' }}>
-                  <b style={{ fontSize: '11px', textTransform: 'uppercase' }}>Shipment tracking</b>
-                  <input className="admin-input" placeholder="Courier / carrier" value={viewingOrder.shippingProvider || ''} onChange={event => setViewingOrder({ ...viewingOrder, shippingProvider: event.target.value })} style={{ marginTop: '7px', width: '100%' }} />
-                  <input className="admin-input" placeholder="Tracking number" value={viewingOrder.trackingNumber || ''} onChange={event => setViewingOrder({ ...viewingOrder, trackingNumber: event.target.value })} style={{ marginTop: '7px', width: '100%' }} />
-                  <input className="admin-input" placeholder="Tracking URL (optional)" value={viewingOrder.trackingUrl || ''} onChange={event => setViewingOrder({ ...viewingOrder, trackingUrl: event.target.value })} style={{ marginTop: '7px', width: '100%' }} />
+                  <b style={{ fontSize: '11px', textTransform: 'uppercase' }}>Agaram delivery driver</b>
+                  <input className="admin-input" placeholder="Driver name" aria-label="Delivery driver name" value={viewingOrder.deliveryDriverName || ''} onChange={event => setViewingOrder({ ...viewingOrder, deliveryDriverName: event.target.value })} style={{ marginTop: '7px', width: '100%' }} />
+                  <input className="admin-input" placeholder="Driver phone" aria-label="Delivery driver phone" type="tel" value={viewingOrder.deliveryDriverPhone || ''} onChange={event => setViewingOrder({ ...viewingOrder, deliveryDriverPhone: event.target.value })} style={{ marginTop: '7px', width: '100%' }} />
+                  <label style={{ display: 'block', fontSize: '10px', color: 'var(--admin-text-soft)', marginTop: '8px' }}>Estimated arrival</label>
+                  <input className="admin-input" aria-label="Estimated delivery time" type="datetime-local" value={toLocalDateTimeInput(viewingOrder.estimatedDeliveryAt)} onChange={event => setViewingOrder({ ...viewingOrder, estimatedDeliveryAt: event.target.value ? new Date(event.target.value).toISOString() : '' })} style={{ marginTop: '4px', width: '100%' }} />
+                  <input className="admin-input" placeholder="Live location share link (optional)" aria-label="Driver live location link" value={viewingOrder.trackingUrl || ''} onChange={event => setViewingOrder({ ...viewingOrder, trackingUrl: event.target.value })} style={{ marginTop: '7px', width: '100%' }} />
                 </div>
                 <label style={{ gridColumn: '1 / -1', fontSize: '11px', fontWeight: 800 }}>Private order notes
                   <textarea className="admin-input" rows={3} value={viewingOrder.adminNotes || ''} onChange={event => setViewingOrder({ ...viewingOrder, adminNotes: event.target.value })} style={{ display: 'block', marginTop: '6px', width: '100%' }} />

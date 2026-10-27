@@ -42,7 +42,9 @@ const connectionString = sanitizeDatabaseUrl(process.env.DATABASE_URL)
 export const pool = new Pool({
   connectionString,
   enableChannelBinding: true,
-  max: Number(process.env.PG_POOL_SIZE || 10),
+  // Keep a small application pool so multiple API instances or overlapping
+  // restarts do not exhaust the database connection limit.
+  max: Math.max(1, Math.min(10, Number(process.env.PG_POOL_SIZE || 5))),
   connectionTimeoutMillis: 10000,
   idleTimeoutMillis: 30000,
   statement_timeout: 15000,
@@ -76,13 +78,28 @@ export function camelProduct(row) {
 }
 
 export function camelOrder(row, items = []) {
+  const inclusiveTax = Number(row.pricing_version || 1) >= 2
   return {
     id: row.order_no, userId: row.user_id, date: new Date(row.created_at).toISOString(),
-    items: items.map(item => ({ productId: Number(item.product_id), quantity: Number(item.quantity), name: item.product_name, sku: item.sku, price: Number(item.unit_price), gst: Number(item.gst_rate) })),
-    total: Number(row.total), subtotal: Number(row.subtotal), tax: Number(row.tax), discount: 0,
+    items: items.map(item => {
+      const base = Number(item.unit_price) * Number(item.quantity)
+      const discount = inclusiveTax ? Number(item.discount_amount || 0) : 0
+      const gross = base - discount
+      const tax = inclusiveTax
+        ? Math.round(gross * Number(item.gst_rate) / (100 + Number(item.gst_rate)) * 100) / 100
+        : Math.round(base * Number(item.gst_rate)) / 100
+      return { productId: Number(item.product_id), quantity: Number(item.quantity), name: item.product_name, sku: item.sku, price: Number(item.unit_price), gst: Number(item.gst_rate), discount, lineTotal: inclusiveTax ? gross : base + tax, tax }
+    }),
+    total: Number(row.total), subtotal: Number(row.subtotal), tax: Number(row.tax), discount: inclusiveTax ? Number(row.discount || 0) : 0, couponCode: row.coupon_code || '', deliveryFee: Number(row.delivery_fee || 0), pricingVersion: Number(row.pricing_version || 1),
     customerType: row.customer_type || 'retail', coinsEarned: Math.floor(Number(row.total) / 100),
     customerName: row.customer_name, email: row.email || '', phone: row.phone,
     address: row.address, city: row.city, pincode: row.pincode, gstin: row.gstin || '',
     status: row.status,
+    paymentMethod: row.payment_method || 'cod', paymentStatus: row.payment_status || 'due_on_delivery',
+    shippingProvider: row.shipping_provider || '', trackingNumber: row.tracking_number || '', trackingUrl: row.tracking_url || '',
+    deliveryDriverName: row.delivery_driver_name || '', deliveryDriverPhone: row.delivery_driver_phone || '',
+    estimatedDeliveryAt: row.estimated_delivery_at ? new Date(row.estimated_delivery_at).toISOString() : '',
+    customerNotes: row.customer_notes || '', adminNotes: row.admin_notes || '',
+    statusHistory: Array.isArray(row.status_history) ? row.status_history : [], updatedAt: new Date(row.updated_at || row.created_at).toISOString(),
   }
 }

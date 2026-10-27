@@ -1,8 +1,8 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Printer } from 'lucide-react'
-import { Product, Language, unitPrice, money, CustomerType } from '../data/products'
-import { ApiOrder } from '../api'
+import { Product, Language, unitPrice, money } from '../data/products'
+import { ApiOrder, fetchOrders } from '../api'
 
 interface InvoicePageProps {
   products: Product[]
@@ -13,46 +13,39 @@ interface InvoicePageProps {
 export const InvoicePage: React.FC<InvoicePageProps> = ({ products, lang = 'en', onOpenTracking }) => {
   const { orderId } = useParams<{ orderId: string }>()
 
-  let orders: ApiOrder[] = []
+  let cachedOrders: ApiOrder[] = []
   try {
-    orders = JSON.parse(localStorage.getItem('abm_orders') || '[]')
+    cachedOrders = JSON.parse(localStorage.getItem('abm_orders') || '[]')
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith('abm_orders_')) cachedOrders = [...cachedOrders, ...JSON.parse(localStorage.getItem(key) || '[]')]
+    }
   } catch {}
+  const [orders, setOrders] = useState<ApiOrder[]>(cachedOrders)
+  const [loading, setLoading] = useState(true)
+  useEffect(() => {
+    let active = true
+    fetchOrders().then(remoteOrders => { if (active) setOrders(remoteOrders) }).catch(() => {}).finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [])
 
-  const order = orders.find(o => o.id === orderId) || {
-    id: orderId || 'ABM62219233',
-    date: new Date().toLocaleDateString('en-GB'),
-    items: [
-      { productId: 101, quantity: 1 }
-    ],
-    total: 188.80,
-    subtotal: 160.00,
-    tax: 28.80,
-    discount: 0,
-    customerType: 'retail' as CustomerType,
-    coinsEarned: 10,
-    customerName: 'Valued Customer',
-    email: 'customer@agaram.in',
-    phone: '9876543210',
-    address: 'Cuddalore',
-    city: 'Cuddalore',
-    pincode: '607001',
-    gstin: '33AABCA1234A1Z5'
-  }
+  const order = orders.find(o => o.id === orderId)
+  if (loading) return <div className="container" style={{ padding: '70px 20px', textAlign: 'center' }}>Loading order…</div>
+  if (!order) return <div className="container" style={{ padding: '70px 20px', textAlign: 'center' }}><h2>Order not found</h2><p style={{ color: '#64748b' }}>Sign in to the account that placed this order, then open it from your order history.</p><Link to="/account?tab=orders" className="btn btn-primary">Go to my orders</Link></div>
 
   // Calculate items with GST & taxable breakdown
   const lineItems = order.items.map((item, idx) => {
     const prod = products.find(p => p.id === item.productId)
-    const gstRate = prod?.gst || 18
-    const basePrice = prod ? unitPrice(prod, item.quantity, order.customerType) : 160
-    const taxableUnitRate = Math.round((basePrice / (1 + gstRate / 100)) * 100) / 100
+    const gstRate = item.gst ?? prod?.gst ?? 18
+    const basePrice = item.price ?? (prod ? unitPrice(prod, item.quantity, order.customerType) : 160)
+    const taxableUnitRate = basePrice
     const taxableTotal = Math.round((taxableUnitRate * item.quantity) * 100) / 100
-    const gstAmount = Math.round((taxableTotal * (gstRate / 100)) * 100) / 100
-    const lineTotal = Math.round((taxableTotal + gstAmount) * 100) / 100
+    const gstAmount = item.tax ?? Math.round((taxableTotal * gstRate)) / 100
+    const lineTotal = item.lineTotal ?? Math.round((taxableTotal + gstAmount) * 100) / 100
 
     return {
       index: idx + 1,
-      name: prod?.name || 'Desk Stationery Item',
-      sku: prod?.sku || 'ABM-ST-001',
+      name: item.name || prod?.name || 'Stationery Item',
+      sku: item.sku || prod?.sku || '—',
       brand: prod?.brand || 'Agaram',
       hsn: '9608',
       quantity: item.quantity,
@@ -150,6 +143,9 @@ export const InvoicePage: React.FC<InvoicePageProps> = ({ products, lang = 'en',
             <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>Invoice: #{order.id}</div>
             <div style={{ fontSize: '12px', color: '#475569' }}>State: Tamil Nadu (Code 33)</div>
             <div style={{ fontSize: '12px', color: '#475569' }}>Place of Supply: Cuddalore, TN</div>
+            <div style={{ fontSize: '12px', color: '#475569' }}>Payment: {(order.paymentMethod || 'cod').toUpperCase()} · {(order.paymentStatus || 'due_on_delivery').replace(/_/g, ' ')}</div>
+            {order.shippingProvider && <div style={{ fontSize: '12px', color: '#475569' }}>Courier: {order.shippingProvider}{order.trackingNumber ? ` · ${order.trackingNumber}` : ''}</div>}
+            {order.trackingUrl && <a href={order.trackingUrl} target="_blank" rel="noreferrer" style={{ fontSize: '12px' }}>Track shipment</a>}
           </div>
         </div>
 

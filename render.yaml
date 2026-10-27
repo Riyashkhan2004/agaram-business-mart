@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: agaram-business-mart
+    name: agaram-business-mart-new
     runtime: node
     rootDir: backend
     buildCommand: npm ci
@@ -9,9 +9,15 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PG_POOL_SIZE
+        value: "5"
       - key: FRONTEND_ORIGIN
         value: https://agaram-business-mart.netlify.app
       - key: PUBLIC_FRONTEND_URL
         value: https://agaram-business-mart.netlify.app
       - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
         sync: false

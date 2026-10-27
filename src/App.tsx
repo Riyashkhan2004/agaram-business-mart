@@ -2458,7 +2458,7 @@ function CheckoutPage({
   const [couponCode, setCouponCode] = useState('')
   const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discountPct: number } | null>(null)
   const [couponError, setCouponError] = useState('')
-  const [paymentMode, setPaymentMode] = useState<'upi' | 'card' | 'cod'>('upi')
+  const paymentMode = 'cod' as const
   const [placing, setPlacing] = useState(false)
   const [orderError, setOrderError] = useState('')
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([])
@@ -2598,6 +2598,8 @@ function CheckoutPage({
       pincode,
       customerType,
       gstin,
+      paymentMethod: paymentMode,
+      couponCode: appliedCoupon?.code,
     }
     const matchingAddress = savedAddresses.find(item => item.address === address && item.city === city && item.pincode === pincode)
     const nextAddresses: SavedAddress[] = [
@@ -2821,29 +2823,10 @@ function CheckoutPage({
                 </label>
               </div>
 
-              <h2 style={{ fontSize: '18px', fontWeight: 800, marginTop: '28px', marginBottom: '14px' }}>2. Payment Method</h2>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', border: '1px solid var(--line)', borderRadius: '10px', cursor: 'pointer' }}>
-                  <input type="radio" name="payment" checked={paymentMode === 'upi'} onChange={() => setPaymentMode('upi')} />
-                  <div>
-                    <b>UPI / QR Code (Google Pay, PhonePe, Paytm)</b>
-                    <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)' }}>Fastest 1-click payment</span>
-                  </div>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', border: '1px solid var(--line)', borderRadius: '10px', cursor: 'pointer' }}>
-                  <input type="radio" name="payment" checked={paymentMode === 'card'} onChange={() => setPaymentMode('card')} />
-                  <div>
-                    <b>Credit / Debit Card / NetBanking</b>
-                    <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)' }}>Visa, MasterCard, RuPay</span>
-                  </div>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', border: '1px solid var(--line)', borderRadius: '10px', cursor: 'pointer' }}>
-                  <input type="radio" name="payment" checked={paymentMode === 'cod'} onChange={() => setPaymentMode('cod')} />
-                  <div>
-                    <b>Cash on Delivery (COD)</b>
-                    <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)' }}>Pay cash or UPI at delivery doorstep</span>
-                  </div>
-                </label>
+              <h2 style={{ fontSize: '18px', fontWeight: 800, marginTop: '28px', marginBottom: '14px' }}>2. Payment</h2>
+              <div style={{ padding: '16px', border: '1px solid #bbf7d0', borderRadius: '14px', background: 'linear-gradient(130deg,#f0fdf4,#f8fafc)' }}>
+                <b style={{ color: '#14532d' }}>Cash on delivery · Agaram driver</b>
+                <span style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5, marginTop: '5px' }}>Pay the order total in cash to your own Agaram delivery driver when it arrives. Track order updates live from your account.</span>
               </div>
             </div>
           </form>
@@ -2974,18 +2957,20 @@ function InvoicePage({ products, currentUser, lang = 'en', onOpenTracking }: { p
   // Calculate items with GST & taxable breakdown matching Image 2
   const lineItems = order.items.map((item, idx) => {
     const prod = products.find(p => p.id === item.productId)
-    const gstRate = prod?.gst || 18
-    const basePrice = prod ? unitPrice(prod, item.quantity, order.customerType) : 160
-    const taxableUnitRate = Math.round((basePrice / (1 + gstRate / 100)) * 100) / 100
-    const taxableTotal = Math.round((taxableUnitRate * item.quantity) * 100) / 100
-    const gstAmount = Math.round((taxableTotal * (gstRate / 100)) * 100) / 100
-    const lineTotal = Math.round((taxableTotal + gstAmount) * 100) / 100
+    const gstRate = item.gst ?? prod?.gst ?? 18
+    const basePrice = item.price ?? (prod ? unitPrice(prod, item.quantity, order.customerType) : 160)
+    const legacyPricing = (order.pricingVersion || 1) < 2
+    const grossTotal = basePrice * item.quantity - (item.discount || 0)
+    const gstAmount = item.tax ?? (legacyPricing ? Math.round(basePrice * item.quantity * gstRate) / 100 : Math.round(grossTotal * gstRate / (100 + gstRate) * 100) / 100)
+    const taxableTotal = legacyPricing ? Math.round(basePrice * item.quantity * 100) / 100 : Math.round((grossTotal - gstAmount) * 100) / 100
+    const taxableUnitRate = item.quantity ? taxableTotal / item.quantity : basePrice
+    const lineTotal = item.lineTotal ?? (legacyPricing ? taxableTotal + gstAmount : grossTotal)
 
     return {
       index: idx + 1,
-      name: prod?.name || 'Desk Stapler Set',
+      name: item.name || prod?.name || 'Stationery Item',
       nameTa: prod?.nameTa,
-      sku: prod?.sku || 'ABM-ST-007',
+      sku: item.sku || prod?.sku || '—',
       brand: prod?.brand || 'WorkDesk',
       hsn: 'Verify',
       quantity: item.quantity,
@@ -2999,7 +2984,7 @@ function InvoicePage({ products, currentUser, lang = 'en', onOpenTracking }: { p
 
   const totalTaxable = lineItems.reduce((sum, item) => sum + item.taxableValue, 0)
   const totalGst = lineItems.reduce((sum, item) => sum + item.gstAmount, 0)
-  const grandTotal = totalTaxable + totalGst
+  const grandTotal = order.total
   const cgst = totalGst / 2
   const sgst = totalGst / 2
 
@@ -3071,7 +3056,9 @@ function InvoicePage({ products, currentUser, lang = 'en', onOpenTracking }: { p
             </div>
             <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#0f172a' }}>Customer order</div>
             <div style={{ fontSize: '11.5px', color: '#475569', marginTop: '2px' }}>Invoice number: {order.id}</div>
-            <div style={{ fontSize: '11.5px', color: '#475569' }}>Payment: Demo selection only</div>
+            <div style={{ fontSize: '11.5px', color: '#475569' }}>Payment: {(order.paymentMethod || 'cod').toUpperCase()} · {(order.paymentStatus || 'due_on_delivery').replace(/_/g, ' ')}</div>
+            {order.shippingProvider && <div style={{ fontSize: '11.5px', color: '#475569' }}>Courier: {order.shippingProvider}{order.trackingNumber ? ` · ${order.trackingNumber}` : ''}</div>}
+            {order.trackingUrl && <a href={order.trackingUrl} target="_blank" rel="noreferrer" style={{ fontSize: '11.5px' }}>Track shipment</a>}
             <div style={{ fontSize: '11.5px', color: '#475569' }}>Place of supply: Cuddalore, Tamil Nadu</div>
           </div>
         </div>
@@ -3142,6 +3129,8 @@ function InvoicePage({ products, currentUser, lang = 'en', onOpenTracking }: { p
               <span>Estimated GST</span>
               <b>₹{totalGst.toFixed(2)}</b>
             </div>
+            {order.discount > 0 && <div style={{ color: '#15803d', fontSize: '11px' }}>Coupon {order.couponCode || 'discount'} applied · saved {money(order.discount)} (reflected in item totals)</div>}
+            {order.deliveryFee ? <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}><span>Delivery fee</span><b>{money(order.deliveryFee)}</b></div> : null}
             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b', fontSize: '11.5px', paddingLeft: '10px' }}>
               <span>CGST (illustrative)</span>
               <span>₹{cgst.toFixed(2)}</span>

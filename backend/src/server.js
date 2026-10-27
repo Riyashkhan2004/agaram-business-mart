@@ -14,18 +14,6 @@ if (production && (!process.env.FRONTEND_ORIGIN || !process.env.FRONTEND_ORIGIN.
   throw new Error('Set FRONTEND_ORIGIN to your exact HTTPS frontend origin(s)')
 }
 
-try {
-  const configuredAdmin = await pool.query('SELECT 1 FROM admins LIMIT 1')
-  if (!configuredAdmin.rowCount) {
-    const adminPass = process.env.ADMIN_PASSWORD || 'abm-123-786-abm-secure'
-    const adminEmail = (process.env.ADMIN_EMAIL || 'admin@agaram.in').trim().toLowerCase()
-    await pool.query('INSERT INTO admins(email,password_hash) VALUES($1,$2) ON CONFLICT (email) DO NOTHING', [adminEmail, await bcrypt.hash(adminPass, 12)])
-    await pool.query('INSERT INTO admins(email,password_hash) VALUES($1,$2) ON CONFLICT (email) DO NOTHING', ['admin@abm.in', await bcrypt.hash('AdminABM123', 12)])
-    console.log('Admins verified on server startup.')
-  }
-} catch (err) {
-  console.warn('Initial admin check notice:', err.message)
-}
 const dummyPasswordHash = await bcrypt.hash('dummy-password-never-used', 12)
 const frontendUrl = process.env.PUBLIC_FRONTEND_URL || allowedFrontendOrigin()
 if (production && !/^https:\/\/|^http:\/\/localhost/i.test(frontendUrl)) throw new Error('PUBLIC_FRONTEND_URL must use HTTPS in production')
@@ -117,7 +105,17 @@ const orderSchema = z.object({
   customerName: z.string().trim().min(1).max(120), phone: phoneSchema, email: z.union([z.string().email().max(254), z.literal('')]).optional(),
   address: z.string().trim().min(5).max(500), city: z.string().trim().min(1).max(100),
   pincode: z.string().trim().regex(/^\d{6}$/), gstin: z.string().trim().max(20).optional(),
+  paymentMethod: z.literal('cod').default('cod'), customerNotes: z.string().trim().max(1000).optional(),
+  couponCode: z.string().trim().max(40).optional(),
 }).refine(order => new Set(order.items.map(item => item.productId)).size === order.items.length, 'Each product should appear once')
+const orderDetailsSchema = z.object({
+  paymentStatus: z.enum(['pending', 'paid', 'failed', 'due_on_delivery', 'refunded']).optional(),
+  shippingProvider: z.string().trim().max(120).optional(), trackingNumber: z.string().trim().max(160).optional(),
+  trackingUrl: z.union([z.string().url().max(2000).refine(value => /^https?:\/\//i.test(value)), z.literal('')]).optional(), adminNotes: z.string().trim().max(3000).optional(),
+  deliveryDriverName: z.string().trim().max(120).optional(),
+  deliveryDriverPhone: z.union([phoneSchema, z.literal('')]).optional(),
+  estimatedDeliveryAt: z.union([z.string().datetime(), z.literal('')]).optional(),
+})
 const savedAddressesSchema = z.object({
   addresses: z.array(z.object({
     id: z.string().max(80).optional(),
@@ -312,6 +310,17 @@ async function createAndSendVerification(user) {
 }
 
 const safeProduct = row => camelProduct(row)
+const orderStatusNotes = {
+  received: 'Agaram received your order',
+  confirmed: 'Agaram confirmed your order',
+  packed: 'Your items are packed and ready',
+  shipped: 'Your order is with an Agaram delivery driver',
+  delivered: 'Your order was delivered',
+}
+
+// Render's service root should give visitors a useful health result instead
+// of Express's default "Cannot GET /" response.
+app.get('/', (_req, res) => res.redirect(302, '/api/health'))
 
 app.get('/api/health', async (_req, res) => {
   try {
@@ -345,9 +354,9 @@ app.get('/api/products/:id', async (req, res) => {
 app.post('/api/coupons/validate', (req, res) => {
   const { code, total } = req.body || {}
   const coupons = [
-    { code: 'AESTHETIC10', discountPct: 10, minOrder: 399, description: '10% OFF on all aesthetic stationery' },
-    { code: 'SCOOBOO15', discountPct: 15, minOrder: 799, description: '15% OFF on orders over ₹799' },
-    { code: 'BULK20', discountPct: 20, minOrder: 1499, description: '20% OFF on school and institutional orders' },
+    { code: 'XEROX15', discountPct: 15, minOrder: 999, description: '15% OFF for Xerox & Print Shop Orders over ₹999' },
+    { code: 'RETAIL20', discountPct: 20, minOrder: 1499, description: '20% OFF for Retailers & Bulk Cartons' },
+    { code: 'OFFICE10', discountPct: 10, minOrder: 499, description: '10% OFF on Corporate Office Desk Supplies' },
     { code: 'AGARAMFIRST', discountPct: 12, minOrder: 299, description: 'Welcome treat: 12% OFF on your first purchase' },
   ]
   const match = coupons.find(c => c.code.toUpperCase() === String(code || '').trim().toUpperCase())
@@ -652,7 +661,7 @@ app.post('/api/orders', async (req, res) => {
     const productResult = await client.query('SELECT * FROM products WHERE id=ANY($1::int[]) AND active=TRUE ORDER BY id FOR UPDATE', [ids])
     const productsById = new Map(productResult.rows.map(row => [Number(row.id), row]))
     const lines = []
-    let subtotalCents = 0; let taxCents = 0
+    let subtotalCents = 0
 
     for (const item of customer.items) {
       const product = productsById.get(item.productId)
@@ -667,21 +676,50 @@ app.post('/api/orders', async (req, res) => {
       const wholesaleMultiplier = customer.customerType === 'wholesale' ? 0.95 : 1
       const unitCents = Math.round(Number(tier?.price ?? product.price) * wholesaleMultiplier * 100)
       const lineCents = unitCents * item.quantity
-      const lineTaxCents = Math.round(lineCents * Number(product.gst) / 100)
-      subtotalCents += lineCents; taxCents += lineTaxCents
-      lines.push({ item, product, unitCents })
+      subtotalCents += lineCents
+      lines.push({ item, product, unitCents, lineCents })
+    }
+
+    const activeCoupons = [
+      { code: 'XEROX15', discountPct: 15, minOrder: 999 },
+      { code: 'RETAIL20', discountPct: 20, minOrder: 1499 },
+      { code: 'OFFICE10', discountPct: 10, minOrder: 499 },
+      { code: 'AGARAMFIRST', discountPct: 12, minOrder: 299 },
+    ]
+    let discountCents = 0
+    if (customer.couponCode) {
+      const coupon = activeCoupons.find(value => value.code === customer.couponCode?.toUpperCase())
+      if (!coupon) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Invalid coupon code' }) }
+      if (subtotalCents < coupon.minOrder * 100) { await client.query('ROLLBACK'); return res.status(400).json({ error: `Coupon ${coupon.code} requires a minimum order of ₹${coupon.minOrder}` }) }
+      discountCents = Math.round(subtotalCents * coupon.discountPct / 100)
+    }
+
+    const deliveryFeeCents = subtotalCents >= 49900 ? 0 : 4900
+    let allocatedDiscountCents = 0
+    let taxCents = 0
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index]
+      line.discountCents = index === lines.length - 1
+        ? discountCents - allocatedDiscountCents
+        : subtotalCents ? Math.round(discountCents * line.lineCents / subtotalCents) : 0
+      allocatedDiscountCents += line.discountCents
+      const netLineCents = line.lineCents - line.discountCents
+      line.taxCents = Math.round(netLineCents * Number(line.product.gst) / (100 + Number(line.product.gst)))
+      taxCents += line.taxCents
     }
 
     const orderNo = `ABM${Date.now().toString(36).toUpperCase()}${randomUUID().slice(0,4).toUpperCase()}`
-    const inserted = await client.query(`INSERT INTO orders(order_no,user_id,customer_name,phone,email,address,city,pincode,gstin,subtotal,tax,total,customer_type)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
-      [orderNo, userId, customer.customerName, customer.phone, customer.email || sessionUser?.email || null, customer.address, customer.city, customer.pincode, customer.gstin || null, subtotalCents/100, taxCents/100, (subtotalCents+taxCents)/100, customer.customerType])
+    const paymentStatus = customer.paymentMethod === 'cod' ? 'due_on_delivery' : 'pending'
+    const initialHistory = [{ status: 'received', at: new Date().toISOString(), note: 'Order placed' }]
+    const inserted = await client.query(`INSERT INTO orders(order_no,user_id,customer_name,phone,email,address,city,pincode,gstin,subtotal,discount,coupon_code,delivery_fee,tax,total,customer_type,pricing_version,payment_method,payment_status,customer_notes,status_history)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
+      [orderNo, userId, customer.customerName, customer.phone, customer.email || sessionUser?.email || null, customer.address, customer.city, customer.pincode, customer.gstin || null, subtotalCents/100, discountCents/100, customer.couponCode?.toUpperCase() || null, deliveryFeeCents/100, taxCents/100, (subtotalCents-discountCents+deliveryFeeCents)/100, customer.customerType, 2, customer.paymentMethod, paymentStatus, customer.customerNotes || null, JSON.stringify(initialHistory)])
     const order = inserted.rows[0]
 
     for (const line of lines) {
       await client.query('UPDATE products SET stock=stock-$1,updated_at=NOW() WHERE id=$2', [line.item.quantity, line.product.id])
-      await client.query(`INSERT INTO order_items(order_id,product_id,product_name,sku,quantity,unit_price,gst_rate)
-        VALUES($1,$2,$3,$4,$5,$6,$7)`, [order.id, line.product.id, line.product.name, line.product.sku, line.item.quantity, line.unitCents/100, line.product.gst])
+      await client.query(`INSERT INTO order_items(order_id,product_id,product_name,sku,quantity,unit_price,gst_rate,discount_amount)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, [order.id, line.product.id, line.product.name, line.product.sku, line.item.quantity, line.unitCents/100, line.product.gst, line.discountCents/100])
     }
     const itemRows = await client.query('SELECT * FROM order_items WHERE order_id=$1 ORDER BY id', [order.id])
     await client.query('COMMIT')
@@ -694,7 +732,7 @@ app.post('/api/orders', async (req, res) => {
 })
 
 async function loadOrders(whereSql, values) {
-  const rows = await pool.query(`SELECT * FROM orders ${whereSql} ORDER BY created_at DESC LIMIT 200`, values)
+  const rows = await pool.query(`SELECT * FROM orders ${whereSql} ORDER BY created_at DESC LIMIT 5000`, values)
   if (!rows.rowCount) return []
   const ids = rows.rows.map(row => row.id)
   const lineResult = await pool.query('SELECT * FROM order_items WHERE order_id=ANY($1::uuid[]) ORDER BY id', [ids])
@@ -731,7 +769,8 @@ async function cancelOrder(orderKey, ownerId) {
     }
     await client.query(`UPDATE products p SET stock=p.stock+oi.quantity,updated_at=NOW()
       FROM order_items oi WHERE oi.order_id=$1 AND oi.product_id=p.id`, [order.id])
-    await client.query("UPDATE orders SET status='cancelled' WHERE id=$1", [order.id])
+    await client.query(`UPDATE orders SET status='cancelled',updated_at=NOW(),
+      status_history=status_history || jsonb_build_array(jsonb_build_object('status','cancelled','at',NOW(),'note','Order cancelled')) WHERE id=$1`, [order.id])
     await client.query('COMMIT')
     return { success: true, status: 'cancelled' }
   } catch (error) {
@@ -774,13 +813,36 @@ app.patch('/api/admin/orders/:id/status', authorize('admin'), async (req, res) =
       await client.query('ROLLBACK')
       return res.status(409).json({ error: 'A cancelled order cannot be reopened.' })
     }
-    const result = await client.query('UPDATE orders SET status=$1 WHERE id=$2 RETURNING *', [status, existing.rows[0].id])
+    const result = await client.query(`UPDATE orders SET status=$1, updated_at=NOW(),
+      status_history=status_history || jsonb_build_array(jsonb_build_object('status',$1::text,'at',NOW(),'note',$3::text))
+      WHERE id=$2 RETURNING *`, [status, existing.rows[0].id, orderStatusNotes[status] || 'Order status updated'])
     await client.query('COMMIT')
     return res.json({ success: true, order: result.rows[0] })
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {})
     throw error
   } finally { client.release() }
+})
+
+app.patch('/api/admin/orders/:id/details', authorize('admin'), async (req, res) => {
+  const parsed = orderDetailsSchema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid order details', details: parsed.error.flatten() })
+  const fields = parsed.data
+  const updates = []
+  const values = [req.params.id]
+  const columns = { paymentStatus: 'payment_status', shippingProvider: 'shipping_provider', trackingNumber: 'tracking_number', trackingUrl: 'tracking_url', deliveryDriverName: 'delivery_driver_name', deliveryDriverPhone: 'delivery_driver_phone', estimatedDeliveryAt: 'estimated_delivery_at', adminNotes: 'admin_notes' }
+  for (const [key, column] of Object.entries(columns)) {
+    if (fields[key] !== undefined) { values.push(fields[key] || null); updates.push(`${column}=$${values.length}`) }
+  }
+  if (!updates.length) return res.status(400).json({ error: 'No order details were provided' })
+  if (fields.deliveryDriverName !== undefined || fields.estimatedDeliveryAt !== undefined) {
+    updates.push("status_history=status_history || jsonb_build_array(jsonb_build_object('status','delivery_plan_updated','at',NOW(),'note','Driver or arrival details updated'))")
+  }
+  updates.push('updated_at=NOW()')
+  const result = await pool.query(`UPDATE orders SET ${updates.join(', ')} WHERE order_no=$1 OR id::text=$1 RETURNING *`, values)
+  if (!result.rowCount) return res.status(404).json({ error: 'Order not found' })
+  const items = await pool.query('SELECT * FROM order_items WHERE order_id=$1 ORDER BY id', [result.rows[0].id])
+  res.json({ order: camelOrder(result.rows[0], items.rows) })
 })
 
 app.delete('/api/admin/orders/:id', authorize('admin'), async (req, res) => {
@@ -854,6 +916,9 @@ app.use((err, req, res, _next) => {
   if (dbError) return res.status(dbError[0]).json({ error: dbError[1], reference })
   if (typeof err?.code === 'string' && err.code.startsWith('08')) {
     return res.status(503).json({ error: 'The database connection is temporarily unavailable. Please retry shortly.', reference })
+  }
+  if (err?.code === '53300') {
+    return res.status(503).json({ error: 'The database connection limit has been reached. Reduce the API pool size or close stale database sessions, then retry.', reference })
   }
   if (typeof err?.code === 'string' && err.code.startsWith('53')) {
     return res.status(503).json({ error: 'The database is temporarily unable to process requests. Please try again shortly.', reference })

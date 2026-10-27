@@ -36,7 +36,7 @@ export function CheckoutPage({
   const [city, setCity] = useState('')
   const [pincode, setPincode] = useState(userPincode || '607001')
   const [gstin, setGstin] = useState('')
-  const [paymentMode, setPaymentMode] = useState<'upi' | 'card' | 'cod'>('upi')
+  const [paymentMode] = useState<'cod'>('cod')
   const [placing, setPlacing] = useState(false)
 
   // Auth gate state for guests
@@ -140,6 +140,7 @@ export function CheckoutPage({
     }
 
     setPlacing(true)
+    const couponCode = sessionStorage.getItem('applied_coupon') || undefined
     const orderData = {
       items: cart,
       customerName: name,
@@ -149,6 +150,8 @@ export function CheckoutPage({
       city,
       pincode,
       customerType,
+      paymentMethod: paymentMode,
+      couponCode,
       gstin: gstin || undefined,
     }
 
@@ -177,6 +180,7 @@ export function CheckoutPage({
       const userOrdersKey = `abm_orders_${currentUser.id || currentUser.email}`
       const existingUserOrders: ApiOrder[] = JSON.parse(localStorage.getItem(userOrdersKey) || '[]')
       localStorage.setItem(userOrdersKey, JSON.stringify([order, ...existingUserOrders]))
+      sessionStorage.removeItem('applied_coupon')
 
       onClearCart()
       navigate(`/invoice/${localId}`)
@@ -450,31 +454,16 @@ export function CheckoutPage({
             </div>
 
             {/* Payment Mode Selection */}
-            <div style={{ margin: '18px 0' }}>
-              <label style={{ fontSize: '12px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>Payment Method:</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-                {(['upi', 'card', 'cod'] as const).map(mode => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setPaymentMode(mode)}
-                    style={{
-                      padding: '8px',
-                      borderRadius: '10px',
-                      border: paymentMode === mode ? '2px solid #15803d' : '1px solid #cbd5e1',
-                      background: paymentMode === mode ? '#f0fdf4' : '#fff',
-                      color: paymentMode === mode ? '#15803d' : '#475569',
-                      fontWeight: 800,
-                      fontSize: '11.5px',
-                      cursor: 'pointer',
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    {mode === 'upi' ? '⚡ UPI / GPay' : mode === 'card' ? '💳 Card' : '💵 Cash on Delivery'}
-                  </button>
-                ))}
+            <section aria-label="Cash on delivery" style={{ margin: '18px 0', padding: '16px', borderRadius: '14px', border: '1px solid #bbf7d0', background: 'linear-gradient(130deg,#f0fdf4,#f8fafc)' }}>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                <div aria-hidden="true" style={{ display: 'grid', placeItems: 'center', width: '42px', height: '42px', flexShrink: 0, borderRadius: '12px', color: '#fff', background: '#15803d', fontSize: '21px' }}>₹</div>
+                <div>
+                  <div style={{ color: '#14532d', fontSize: '13px', fontWeight: 900 }}>Cash on delivery</div>
+                  <div style={{ color: '#475569', fontSize: '12px', lineHeight: 1.5, marginTop: '3px' }}>Pay <b>{money(grandTotal)}</b> in cash to your Agaram delivery driver when your order arrives. No online payment needed.</div>
+                  <div style={{ color: '#166534', fontSize: '11px', fontWeight: 800, marginTop: '8px' }}>✓ Delivered by the Agaram team · Live order updates</div>
+                </div>
               </div>
-            </div>
+            </section>
 
             {/* Place Order CTA Button */}
             <button
@@ -498,7 +487,7 @@ export function CheckoutPage({
                 boxShadow: '0 6px 20px rgba(21, 128, 61, 0.35)',
               }}
             >
-              {placing ? 'Placing Order in Neon DB...' : `Place Order · ${money(grandTotal)}`}
+              {placing ? 'Placing order…' : `Place Order · ${money(grandTotal)}`}
               {!placing && <ArrowRight size={18} />}
             </button>
           </div>

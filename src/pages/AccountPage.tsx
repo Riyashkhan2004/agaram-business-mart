@@ -55,6 +55,47 @@ type TabKey =
   | 'giftcards'
   | 'notifications'
 
+const DELIVERY_STEPS = [
+  { key: 'received', label: 'Received' },
+  { key: 'confirmed', label: 'Confirmed' },
+  { key: 'packed', label: 'Packed' },
+  { key: 'shipped', label: 'On the way' },
+  { key: 'delivered', label: 'Delivered' },
+]
+
+function LiveOrderProgress({ order }: { order: ApiOrder }) {
+  const currentStep = DELIVERY_STEPS.findIndex(step => step.key === (order.status || 'received'))
+  const cancelled = order.status === 'cancelled'
+  return (
+    <section aria-live="polite" aria-label={`Live delivery status: ${order.status || 'received'}`} style={{ padding: '14px', margin: '10px 0 12px', borderRadius: '14px', border: '1px solid #dbeafe', background: 'linear-gradient(120deg,#eff6ff,#f8fafc)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '12px' }}>
+        <b style={{ color: '#1e3a8a', fontSize: '12px', letterSpacing: '.04em' }}>{cancelled ? 'ORDER CANCELLED' : 'AGARAM LIVE DELIVERY'}</b>
+        {!cancelled && <span style={{ color: '#047857', background: '#d1fae5', borderRadius: '999px', padding: '4px 8px', fontSize: '10px', fontWeight: 900 }}>LIVE · 5 SEC SYNC</span>}
+      </div>
+      {!cancelled && <div style={{ display: 'grid', gridTemplateColumns: `repeat(${DELIVERY_STEPS.length}, minmax(0, 1fr))`, gap: '4px' }}>
+        {DELIVERY_STEPS.map((step, index) => {
+          const complete = currentStep >= 0 && index <= currentStep
+          return <div key={step.key}>
+            <div style={{ height: '5px', borderRadius: '9px', background: complete ? '#16a34a' : '#dbe3ec' }} />
+            <div style={{ color: complete ? '#166534' : '#64748b', fontSize: '9px', lineHeight: 1.2, marginTop: '5px', fontWeight: complete ? 800 : 600 }}>{step.label}</div>
+          </div>
+        })}
+      </div>}
+      {!cancelled && <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', fontSize: '11px', color: '#475569', marginTop: '11px' }}>
+        <span>Cash on delivery</span>
+        <span aria-hidden="true">·</span>
+        <b style={{ color: '#0f172a' }}>{order.paymentStatus === 'paid' ? 'Cash collected' : `Pay ${money(order.total)} to your driver`}</b>
+      </div>}
+      {order.deliveryDriverName && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', marginTop: '11px', paddingTop: '10px', borderTop: '1px solid #dbeafe' }}>
+        <div style={{ fontSize: '11px', color: '#475569' }}><b style={{ color: '#0f172a' }}>{order.deliveryDriverName}</b> · Agaram delivery driver{order.estimatedDeliveryAt && <div style={{ marginTop: '3px' }}>ETA {new Date(order.estimatedDeliveryAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</div>}</div>
+        {order.deliveryDriverPhone && <a href={`tel:${order.deliveryDriverPhone}`} aria-label={`Call delivery driver ${order.deliveryDriverName}`} style={{ minHeight: '40px', padding: '0 12px', display: 'inline-flex', alignItems: 'center', borderRadius: '9px', color: '#fff', background: '#15803d', textDecoration: 'none', fontWeight: 800, fontSize: '11px' }}>Call driver</a>}
+      </div>}
+      {order.status === 'shipped' && order.trackingUrl && <a href={order.trackingUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', marginTop: '10px', fontSize: '11px', fontWeight: 800 }}>Open driver live location →</a>}
+      {order.updatedAt && <div style={{ color: '#64748b', fontSize: '9px', marginTop: '8px' }}>Last updated {new Date(order.updatedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</div>}
+    </section>
+  )
+}
+
 export const AccountPage: React.FC<AccountPageProps> = ({
   currentUser,
   setCurrentUser,
@@ -137,6 +178,31 @@ export const AccountPage: React.FC<AccountPageProps> = ({
       })
     return () => { cancelled = true }
   }, [currentUser])
+
+  useEffect(() => {
+    if (!currentUser?.id || currentTab !== 'orders') return
+    let active = true
+    let refreshing = false
+    const syncOrders = async () => {
+      if (refreshing || document.visibilityState !== 'visible') return
+      refreshing = true
+      try {
+        const liveOrders = await fetchUserOrders(currentUser.email, currentUser.id)
+        if (active) setOrders(liveOrders.sort((a, b) => Date.parse(b.date) - Date.parse(a.date)))
+      } catch {
+        // Keep the last confirmed server state visible while offline.
+      } finally {
+        refreshing = false
+      }
+    }
+    const timer = window.setInterval(syncOrders, 5_000)
+    window.addEventListener('focus', syncOrders)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+      window.removeEventListener('focus', syncOrders)
+    }
+  }, [currentUser?.id, currentUser?.email, currentTab])
 
   const handleCancelOrder = async (order: ApiOrder) => {
     if (!window.confirm(`Cancel order #${order.id}? The items will be returned to stock.`)) return
@@ -842,21 +908,24 @@ export const AccountPage: React.FC<AccountPageProps> = ({
                                   )}
                                   <div>
                                     <div style={{ fontWeight: 700, color: '#1e293b' }}>
-                                      {p?.name || `Product #${item.productId}`}
+                                      {item.name || p?.name || `Product #${item.productId}`}
                                     </div>
                                     <div style={{ fontSize: '11px', color: '#64748b' }}>
-                                      Qty: <b>{item.quantity}</b> pcs • Tiered wholesale applied
+                                      {item.sku ? `SKU: ${item.sku} · ` : ''}Qty: <b>{item.quantity}</b> · GST {item.gst ?? p?.gst ?? 0}%
                                     </div>
                                   </div>
                                 </div>
                                 <b style={{ color: '#0f172a' }}>
-                                  {money((p ? unitPrice(p, item.quantity, order.customerType) : 100) * item.quantity)}
+                                  {money(item.lineTotal ?? (item.price ?? (p ? unitPrice(p, item.quantity, order.customerType) : 100)) * item.quantity)}
                                 </b>
                               </div>
                             )
                           })}
                         </div>
                       </div>
+
+                      <LiveOrderProgress order={order} />
+                      {order.statusHistory?.length ? <details style={{ borderTop: '1px solid #f1f5f9', paddingTop: '8px', marginBottom: '10px' }}><summary style={{ cursor: 'pointer', fontSize: '11px', color: '#475569', fontWeight: 700 }}>View order activity</summary>{[...order.statusHistory].reverse().map((event, index) => <div key={`${event.at}-${index}`} style={{ fontSize: '10.5px', color: '#64748b', marginTop: '5px' }}>{new Date(event.at).toLocaleString('en-IN')} · {event.status.replace(/_/g, ' ')}{event.note ? ` — ${event.note}` : ''}</div>)}</details> : null}
 
                       {/* Footer Actions */}
                       <div

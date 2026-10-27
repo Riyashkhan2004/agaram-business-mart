@@ -17,7 +17,6 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(254);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ;
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique_idx ON users(email) WHERE email IS NOT NULL;
-DROP TABLE IF EXISTS otp_challenges;
 
 CREATE TABLE IF NOT EXISTS email_verification_tokens (
   user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -140,14 +139,46 @@ CREATE TABLE IF NOT EXISTS orders (
   pincode VARCHAR(12) NOT NULL,
   gstin VARCHAR(20),
   subtotal NUMERIC(12,2) NOT NULL CHECK (subtotal >= 0),
+  discount NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (discount >= 0),
+  coupon_code VARCHAR(40),
+  delivery_fee NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (delivery_fee >= 0),
   tax NUMERIC(12,2) NOT NULL CHECK (tax >= 0),
   total NUMERIC(12,2) NOT NULL CHECK (total >= 0),
   customer_type VARCHAR(16) NOT NULL DEFAULT 'retail' CHECK (customer_type IN ('retail', 'wholesale')),
+  pricing_version SMALLINT NOT NULL DEFAULT 1,
   status VARCHAR(24) NOT NULL DEFAULT 'received' CHECK (status IN ('received', 'confirmed', 'packed', 'shipped', 'delivered', 'cancelled')),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  payment_method VARCHAR(16) NOT NULL DEFAULT 'cod' CHECK (payment_method IN ('upi', 'card', 'cod')),
+  payment_status VARCHAR(24) NOT NULL DEFAULT 'due_on_delivery' CHECK (payment_status IN ('pending', 'paid', 'failed', 'due_on_delivery', 'refunded')),
+  shipping_provider VARCHAR(120),
+  tracking_number VARCHAR(160),
+  tracking_url TEXT,
+  delivery_driver_name VARCHAR(120),
+  delivery_driver_phone VARCHAR(16),
+  estimated_delivery_at TIMESTAMPTZ,
+  customer_notes TEXT,
+  admin_notes TEXT,
+  status_history JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_type VARCHAR(16) NOT NULL DEFAULT 'retail' CHECK (customer_type IN ('retail', 'wholesale'));
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pricing_version SMALLINT NOT NULL DEFAULT 1;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (discount >= 0);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_code VARCHAR(40);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_fee NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (delivery_fee >= 0);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method VARCHAR(16) NOT NULL DEFAULT 'cod' CHECK (payment_method IN ('upi', 'card', 'cod'));
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_status VARCHAR(24) NOT NULL DEFAULT 'due_on_delivery' CHECK (payment_status IN ('pending', 'paid', 'failed', 'due_on_delivery', 'refunded'));
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_provider VARCHAR(120);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_number VARCHAR(160);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_url TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_driver_name VARCHAR(120);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_driver_phone VARCHAR(16);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS estimated_delivery_at TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_notes TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS admin_notes TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS status_history JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 CREATE INDEX IF NOT EXISTS orders_user_created_idx ON orders (user_id, created_at DESC);
 
@@ -159,7 +190,10 @@ CREATE TABLE IF NOT EXISTS order_items (
   sku VARCHAR(80) NOT NULL,
   quantity INTEGER NOT NULL CHECK (quantity > 0),
   unit_price NUMERIC(12,2) NOT NULL CHECK (unit_price >= 0),
-  gst_rate NUMERIC(5,2) NOT NULL CHECK (gst_rate >= 0 AND gst_rate <= 100)
+  gst_rate NUMERIC(5,2) NOT NULL CHECK (gst_rate >= 0 AND gst_rate <= 100),
+  discount_amount NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (discount_amount >= 0)
 );
+
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (discount_amount >= 0);
 
 CREATE INDEX IF NOT EXISTS order_items_order_idx ON order_items (order_id);

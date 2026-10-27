@@ -34,6 +34,9 @@ export type ApiOrder = {
   shippingProvider?: string
   trackingNumber?: string
   trackingUrl?: string
+  deliveryDriverName?: string
+  deliveryDriverPhone?: string
+  estimatedDeliveryAt?: string
   customerNotes?: string
   adminNotes?: string
   statusHistory?: { status: string; at: string; note?: string }[]
@@ -211,7 +214,7 @@ export const createOrder = (order: {
   city: string
   pincode: string
   customerType: 'retail' | 'wholesale'
-  paymentMethod?: 'upi' | 'card' | 'cod'
+  paymentMethod?: 'cod'
   customerNotes?: string
   couponCode?: string
   gstin?: string
@@ -236,7 +239,7 @@ export const fetchAdminOrders = () =>
 export const updateOrderStatus = (orderId: string, status: string) =>
   request<{ success: boolean; order: any }>(`/api/admin/orders/${orderId}/status`, { method: 'PATCH', body: JSON.stringify({ status }) })
 
-export const updateOrderDetails = (orderId: string, details: Pick<ApiOrder, 'paymentStatus' | 'shippingProvider' | 'trackingNumber' | 'trackingUrl' | 'adminNotes'>) =>
+export const updateOrderDetails = (orderId: string, details: Pick<ApiOrder, 'paymentStatus' | 'shippingProvider' | 'trackingNumber' | 'trackingUrl' | 'deliveryDriverName' | 'deliveryDriverPhone' | 'estimatedDeliveryAt' | 'adminNotes'>) =>
   request<{ order: ApiOrder }>(`/api/admin/orders/${encodeURIComponent(orderId)}/details`, { method: 'PATCH', body: JSON.stringify(details) })
 
 export const deleteAdminOrder = (orderId: string) =>
